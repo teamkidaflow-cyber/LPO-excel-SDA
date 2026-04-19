@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LPO Extraction System — Melvin's Kenya</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%2316a34a'/><text y='.9em' font-size='70' x='12'>📄</text></svg>">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js" onerror="window._sbLoadFailed=true"></script>
+  <style>
+    :root {
+      --green: #16a34a; --green-light: #dcfce7; --green-dark: #14532d;
+      --amber: #d97706; --amber-light: #fef3c7;
+      --red: #dc2626; --red-light: #fee2e2;
+      --blue: #2563eb; --blue-light: #dbeafe;
+      --gray-50: #f9fafb; --gray-100: #f3f4f6; --gray-200: #e5e7eb;
+      --gray-300: #d1d5db; --gray-500: #6b7280; --gray-700: #374151; --gray-900: #111827;
+      --radius: 10px;
+      --shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--gray-50); color: var(--gray-900); min-height: 100vh; }
+
+    /* Header */
+    header {
+      background: #fff; border-bottom: 1px solid var(--gray-200);
+      padding: 14px 28px; display: flex; align-items: center; gap: 12px;
+      box-shadow: var(--shadow); position: sticky; top: 0; z-index: 100;
+    }
+    header .logo { width: 36px; height: 36px; background: var(--green); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+    header .logo svg { color: #fff; }
+    header h1 { font-size: 1.05rem; font-weight: 700; }
+    header p { font-size: .78rem; color: var(--gray-500); margin-top: 1px; }
+    header .badge { margin-left: auto; background: var(--green-light); color: var(--green-dark); font-size: .72rem; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+
+    main { max-width: 1400px; margin: 0 auto; padding: 28px 24px; display: flex; flex-direction: column; gap: 20px; }
+
+    /* Card */
+    .card { background: #fff; border: 1px solid var(--gray-200); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+    .card-header { padding: 12px 18px; border-bottom: 1px solid var(--gray-100); display: flex; align-items: center; gap: 8px; font-size: .85rem; font-weight: 600; color: var(--gray-700); background: var(--gray-50); }
+    .card-body { padding: 18px; }
+
+    /* Drop zone */
+    #drop-zone {
+      border: 2px dashed var(--gray-300); border-radius: var(--radius);
+      padding: 36px 24px; text-align: center; cursor: pointer; transition: all .2s;
+      background: var(--gray-50); position: relative;
+    }
+    #drop-zone:hover, #drop-zone.drag-over { border-color: var(--green); background: var(--green-light); }
+    #drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    #drop-zone .icon { width: 48px; height: 48px; margin: 0 auto 10px; background: var(--green-light); border-radius: 12px; display: flex; align-items: center; justify-content: center; }
+    #drop-zone h3 { font-size: .95rem; font-weight: 600; margin-bottom: 5px; }
+    #drop-zone p { font-size: .8rem; color: var(--gray-500); }
+    #drop-zone .formats { margin-top: 8px; display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; }
+    #drop-zone .fmt-badge { font-size: .68rem; font-weight: 600; padding: 2px 7px; border-radius: 4px; background: var(--gray-200); color: var(--gray-700); }
+
+    /* Config row */
+    .config-row { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; }
+    .config-row label { font-size: .8rem; font-weight: 600; color: var(--gray-700); white-space: nowrap; }
+    .config-row input { flex: 1; padding: 8px 12px; border: 1px solid var(--gray-300); border-radius: 7px; font-size: .83rem; outline: none; transition: border-color .2s; }
+    .config-row input:focus { border-color: var(--green); }
+
+    /* Buttons */
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; font-size: .83rem; font-weight: 600; border: none; cursor: pointer; transition: all .15s; }
+    .btn-primary { background: var(--green); color: #fff; }
+    .btn-primary:hover { background: #15803d; }
+    .btn-primary:disabled { background: var(--gray-300); cursor: not-allowed; }
+    .btn-outline { background: #fff; color: var(--gray-700); border: 1px solid var(--gray-300); }
+    .btn-outline:hover { background: var(--gray-50); }
+    .btn-sm { padding: 4px 10px; font-size: .75rem; }
+    .btn-danger { background: var(--red-light); color: var(--red); border: 1px solid #fca5a5; }
+
+    /* File queue */
+    #file-queue { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+    .file-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; border-radius: 8px;
+      border: 1px solid var(--gray-200); background: #fff;
+      font-size: .82rem; transition: all .2s;
+    }
+    .file-row.status-pending  { border-color: var(--gray-200); }
+    .file-row.status-active   { border-color: var(--blue); background: var(--blue-light); }
+    .file-row.status-done     { border-color: #86efac; background: var(--green-light); }
+    .file-row.status-error    { border-color: #fca5a5; background: var(--red-light); }
+
+    .file-row .fr-icon { flex-shrink: 0; }
+    .file-row .fr-name { font-weight: 700; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; font-size: .8rem; }
+    .file-row .fr-size { color: var(--gray-500); font-size: .73rem; white-space: nowrap; }
+    .file-row .fr-status { font-size: .7rem; font-weight: 700; white-space: nowrap; }
+    .file-row.status-pending  .fr-status { color: var(--gray-500); }
+    .file-row.status-active   .fr-status { color: var(--blue); }
+    .file-row.status-done     .fr-status { color: var(--green-dark); }
+    .file-row.status-error    .fr-status { color: var(--red); }
+    .file-row .fr-remove { cursor: pointer; color: var(--gray-400); padding: 2px 4px; border-radius: 4px; font-size: .8rem; line-height: 1; }
+    .file-row .fr-remove:hover { color: var(--red); background: var(--red-light); }
+    .file-row .fr-spinner { width: 14px; height: 14px; border: 2px solid var(--blue-light); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
+    .file-row .fr-jump { font-size: .7rem; font-weight: 700; color: var(--blue); cursor: pointer; text-decoration: underline; white-space: nowrap; display: none; }
+    .file-row.status-done .fr-jump { display: inline; }
+
+    /* Queue controls */
+    .queue-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+    .queue-summary { font-size: .78rem; color: var(--gray-500); margin-left: auto; }
+
+    /* Pipeline */
+    #pipeline { display: none; }
+    .file-pipeline-block { border: 1px solid var(--gray-200); border-radius: 8px; padding: 14px; margin-bottom: 10px; }
+    .file-pipeline-block .fpb-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: .82rem; font-weight: 700; }
+    .file-pipeline-block .fpb-filename { font-family: monospace; color: var(--blue); }
+    .pipeline-stages { display: flex; gap: 0; overflow-x: auto; padding-bottom: 4px; }
+    .stage { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 80px; position: relative; }
+    .stage:not(:last-child)::after { content: ''; position: absolute; top: 14px; left: calc(50% + 14px); right: calc(-50% + 14px); height: 2px; background: var(--gray-200); transition: background .3s; z-index: 0; }
+    .stage.done:not(:last-child)::after { background: var(--green); }
+    .stage-dot { width: 28px; height: 28px; border-radius: 50%; background: var(--gray-200); display: flex; align-items: center; justify-content: center; font-size: .7rem; font-weight: 700; color: var(--gray-500); position: relative; z-index: 1; transition: all .3s; flex-shrink: 0; }
+    .stage.active .stage-dot { background: var(--blue); color: #fff; animation: pulse 1.2s infinite; }
+    .stage.done .stage-dot { background: var(--green); color: #fff; }
+    .stage.error .stage-dot { background: var(--red); color: #fff; }
+    .stage-label { margin-top: 5px; font-size: .6rem; font-weight: 600; color: var(--gray-500); text-align: center; text-transform: uppercase; letter-spacing: .03em; }
+    .stage.active .stage-label { color: var(--blue); }
+    .stage.done .stage-label { color: var(--green); }
+    .stage.error .stage-label { color: var(--red); }
+    @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(37,99,235,.4); } 50% { box-shadow: 0 0 0 7px rgba(37,99,235,0); } }
+    .stage-spinner { display: none; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+    .stage.active .stage-spinner { display: block; }
+    .stage.active .stage-num { display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .status-message { margin-top: 12px; padding: 9px 13px; border-radius: 8px; font-size: .82rem; font-weight: 500; background: var(--blue-light); color: var(--blue); display: flex; align-items: center; gap: 8px; }
+    .status-message.error { background: var(--red-light); color: var(--red); }
+    .status-message.success { background: var(--green-light); color: var(--green-dark); }
+
+    /* Overall progress bar */
+    .progress-bar-wrap { margin-bottom: 14px; }
+    .progress-label { font-size: .75rem; color: var(--gray-500); margin-bottom: 5px; display: flex; justify-content: space-between; }
+    .progress-bar { height: 6px; background: var(--gray-200); border-radius: 3px; overflow: hidden; }
+    .progress-bar-fill { height: 100%; background: var(--green); border-radius: 3px; transition: width .4s; }
+
+    /* Results */
+    #results { display: none; }
+    .results-tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--gray-200); padding-bottom: 0; }
+    .rtab { padding: 7px 14px; font-size: .8rem; font-weight: 600; border-radius: 7px 7px 0 0; cursor: pointer; color: var(--gray-500); border: 1px solid transparent; border-bottom: none; position: relative; bottom: -1px; background: transparent; }
+    .rtab:hover { color: var(--gray-700); }
+    .rtab.active { background: #fff; border-color: var(--gray-200); color: var(--blue); }
+    .rtab .rtab-badge { margin-left: 5px; font-size: .65rem; background: var(--gray-200); color: var(--gray-700); padding: 1px 6px; border-radius: 10px; }
+    .rtab.active .rtab-badge { background: var(--blue-light); color: var(--blue); }
+    .rtab-pane { display: none; }
+    .rtab-pane.active { display: block; }
+
+    /* File result card */
+    .file-result { margin-bottom: 20px; scroll-margin-top: 80px; }
+    .file-result-header {
+      display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+      background: var(--gray-50); border: 1px solid var(--gray-200);
+      border-radius: 8px 8px 0 0; border-bottom: none; flex-wrap: wrap;
+    }
+    .file-result-header .frh-filename { font-family: monospace; font-size: .85rem; font-weight: 700; color: var(--gray-900); flex: 1; }
+    .file-result-header .frh-meta { font-size: .73rem; color: var(--gray-500); }
+    .file-result-body { border: 1px solid var(--gray-200); border-radius: 0 0 8px 8px; overflow: hidden; }
+
+    /* Preview + table split */
+    .results-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+    @media (max-width: 900px) { .results-grid { grid-template-columns: 1fr; } }
+    .preview-pane { border-right: 1px solid var(--gray-200); }
+    .data-pane { overflow: hidden; }
+    .pane-header { padding: 8px 12px; background: var(--gray-50); border-bottom: 1px solid var(--gray-200); font-size: .72rem; font-weight: 700; color: var(--gray-500); text-transform: uppercase; letter-spacing: .04em; display: flex; align-items: center; gap: 6px; }
+
+    /* Preview */
+    .preview-toolbar { background: var(--gray-100); padding: 5px 10px; display: flex; align-items: center; gap: 7px; font-size: .73rem; font-weight: 600; color: var(--gray-700); border-bottom: 1px solid var(--gray-200); }
+    .preview-toolbar .ptb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; }
+    .preview-img   { width: 100%; max-height: 500px; object-fit: contain; display: none; background: #fff; }
+    .preview-frame { width: 100%; height: 500px; border: none; background: #fff; display: none; overflow: hidden; }
+
+    /* Summary cards */
+    .summary-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 12px; border-bottom: 1px solid var(--gray-100); }
+    @media (max-width: 700px) { .summary-cards { grid-template-columns: repeat(2, 1fr); } }
+    .scard { background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 7px; padding: 9px 11px; }
+    .scard .label { font-size: .65rem; font-weight: 600; color: var(--gray-500); text-transform: uppercase; letter-spacing: .04em; }
+    .scard .value { font-size: 1rem; font-weight: 700; margin-top: 2px; }
+    .scard.ok .value { color: var(--green); }
+    .scard.warn .value { color: var(--amber); }
+    .scard.err .value { color: var(--red); }
+
+    /* Table */
+    .table-wrapper { overflow: auto; max-height: 440px; }
+    table { width: 100%; border-collapse: collapse; font-size: .74rem; white-space: nowrap; }
+    thead th { position: sticky; top: 0; background: var(--gray-100); padding: 7px 10px; font-weight: 700; text-align: left; border-bottom: 1px solid var(--gray-200); color: var(--gray-700); letter-spacing: .02em; text-transform: uppercase; font-size: .64rem; }
+    tbody td { padding: 6px 10px; border-bottom: 1px solid var(--gray-100); color: var(--gray-700); }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: var(--gray-50); }
+
+    /* The source-file column highlight */
+    td.col-source { font-family: monospace; font-size: .7rem; color: var(--blue); font-weight: 600; }
+
+    /* Badges */
+    .badge-ok { background: var(--green-light); color: var(--green-dark); }
+    .badge-review { background: var(--amber-light); color: #92400e; }
+    .badge-wrong { background: var(--red-light); color: var(--red); }
+    .badge-ok, .badge-review, .badge-wrong { display: inline-block; font-size: .66rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; }
+    .badge-true { color: var(--green); font-weight: 700; }
+    .badge-false { color: var(--red); font-weight: 700; }
+
+    .acc-bar-wrap { display: flex; align-items: center; gap: 5px; min-width: 70px; }
+    .acc-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--gray-200); overflow: hidden; }
+    .acc-bar-fill { height: 100%; border-radius: 2px; transition: width .5s; }
+    .acc-text { font-size: .7rem; font-weight: 600; min-width: 28px; }
+
+    /* Toast */
+    #toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: var(--gray-900); color: #fff;
+      font-size: .8rem; font-weight: 500;
+      padding: 10px 16px; border-radius: 8px;
+      box-shadow: 0 10px 25px rgba(0,0,0,.2);
+      opacity: 0; transform: translateY(8px);
+      transition: opacity .2s, transform .2s;
+      pointer-events: none; z-index: 999; max-width: 360px;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+    #toast.warn  { background: #92400e; }
+    #toast.error { background: var(--red); }
+    #toast.ok    { background: var(--green-dark); }
+
+    /* Flagged file row */
+    .file-row.status-flagged { border-color: #f97316; background: #fff7ed; }
+    .file-row.status-flagged .fr-status { color: #c2410c; font-weight: 700; }
+
+    /* Limit badge */
+    .limit-pill { font-size: .72rem; font-weight: 600; padding: 2px 8px; border-radius: 10px; background: var(--gray-200); color: var(--gray-700); }
+    .limit-pill.near { background: var(--amber-light); color: #92400e; }
+    .limit-pill.full { background: var(--red-light); color: var(--red); }
+
+    /* Flag badge inside pipeline */
+    .flag-box { margin-top: 8px; padding: 8px 12px; border-radius: 7px; background: #fff7ed; border: 1px solid #fed7aa; font-size: .78rem; color: #c2410c; font-weight: 600; display:flex; gap:6px; align-items:center; }
+
+    /* Sheets link button */
+    .btn-sheets { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
+    .btn-sheets:hover { background: #c8e6c9; }
+    .btn-sheets svg { flex-shrink: 0; }
+
+    /* ── History panel ── */
+    #history-panel {}
+    .history-config { display: flex; flex-direction: column; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--gray-100); background: var(--gray-50); }
+    .history-config-row { display: flex; gap: 10px; align-items: center; }
+    .history-config-row label { font-size: .78rem; font-weight: 600; color: var(--gray-700); white-space: nowrap; min-width: 110px; }
+    .history-config-row input { flex: 1; padding: 7px 11px; border: 1px solid var(--gray-300); border-radius: 7px; font-size: .8rem; outline: none; font-family: monospace; transition: border-color .2s; }
+    .history-config-row input:focus { border-color: var(--blue); }
+    .history-config-note { font-size: .73rem; color: var(--gray-500); }
+    .history-config-note a { color: var(--blue); }
+
+    .history-toolbar { display: flex; gap: 8px; align-items: center; padding: 10px 18px; border-bottom: 1px solid var(--gray-100); }
+    .history-toolbar .ht-count { font-size: .78rem; color: var(--gray-500); margin-left: auto; }
+
+    .history-table-wrap { overflow: auto; max-height: 380px; }
+    .history-table { width: 100%; border-collapse: collapse; font-size: .76rem; white-space: nowrap; }
+    .history-table thead th { position: sticky; top: 0; background: var(--gray-100); padding: 7px 12px; font-weight: 700; text-align: left; border-bottom: 1px solid var(--gray-200); color: var(--gray-700); font-size: .66rem; text-transform: uppercase; letter-spacing: .03em; }
+    .history-table tbody td { padding: 8px 12px; border-bottom: 1px solid var(--gray-100); vertical-align: middle; }
+    .history-table tbody tr:last-child td { border-bottom: none; }
+    .history-table tbody tr:hover td { background: var(--gray-50); }
+    .history-table .ht-filename { font-family: monospace; font-weight: 700; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+    .history-table .ht-lpos { color: var(--blue); font-size: .71rem; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+    .history-table .ht-date { color: var(--gray-500); font-size: .72rem; }
+    .history-empty { padding: 32px; text-align: center; font-size: .82rem; color: var(--gray-500); }
+    .history-loading { padding: 20px; text-align: center; font-size: .8rem; color: var(--gray-500); }
+
+    /* collapsible section */
+    .collapsible-toggle { cursor: pointer; user-select: none; display:flex; align-items:center; gap:6px; }
+    .collapsible-toggle .chevron { transition: transform .2s; font-size:.8rem; opacity:.5; }
+    .collapsible-toggle.open .chevron { transform: rotate(180deg); }
+    .collapsible-body { display: none; }
+    .collapsible-body.open { display: block; }
+
+    /* Error */
+    #error-panel { display: none; }
+    .error-box { background: var(--red-light); border: 1px solid #fca5a5; border-radius: 8px; padding: 14px 18px; display: flex; gap: 10px; align-items: flex-start; }
+    .error-box h3 { font-size: .88rem; font-weight: 700; color: var(--red); margin-bottom: 4px; }
+    .error-box p { font-size: .8rem; color: #7f1d1d; line-height: 1.5; }
+    .error-box code { display: block; margin-top: 8px; background: #fff; border: 1px solid #fca5a5; border-radius: 5px; padding: 9px 11px; font-size: .72rem; font-family: monospace; white-space: pre-wrap; word-break: break-all; color: var(--red); }
+
+    /* Global actions bar */
+    .global-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 18px; border-top: 1px solid var(--gray-100); background: var(--gray-50); }
+    .global-actions .ga-label { font-size: .78rem; color: var(--gray-500); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="16" y1="13" x2="8" y2="13"/>
+      <line x1="16" y1="17" x2="8" y2="17"/>
+    </svg>
+  </div>
+  <div>
+    <h1>LPO Extraction System</h1>
+    <p>Melvin's Kenya · SAP Business One Ready</p>
+  </div>
+  <span class="badge">4-Provider Consensus</span>
+</header>
+
+<main>
+
+  <!-- Upload Card -->
+  <div class="card" id="upload-card">
+    <div class="card-header">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+      Upload Purchase Orders
+    </div>
+    <div class="card-body">
+      <div class="config-row">
+        <label>Webhook URL</label>
+        <input type="url" id="webhook-url" placeholder="https://your-n8n-instance/webhook/lpo-upload" />
+      </div>
+
+      <div id="drop-zone">
+        <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.webp,.tiff,.tif" multiple />
+        <div class="icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2">
+            <polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/>
+            <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+          </svg>
+        </div>
+        <h3>Drop LPO files here</h3>
+        <p>or click to browse · multiple files supported</p>
+        <div class="formats">
+          <span class="fmt-badge">PDF</span>
+          <span class="fmt-badge">PNG</span>
+          <span class="fmt-badge">JPG</span>
+          <span class="fmt-badge">WEBP</span>
+          <span class="fmt-badge">TIFF</span>
+        </div>
+      </div>
+
+      <!-- File queue list -->
+      <div id="file-queue"></div>
+
+      <div class="queue-controls" id="queue-controls" style="display:none">
+        <button class="btn btn-primary" id="process-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+          Process All
+        </button>
+        <button class="btn btn-outline btn-sm" id="clear-queue-btn">Clear Queue</button>
+        <span class="queue-summary" id="queue-summary"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pipeline card -->
+  <div class="card" id="pipeline">
+    <div class="card-header">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      Processing Pipeline
+      <button class="btn btn-outline btn-sm" id="reset-btn" style="margin-left:auto; display:none">↺ New Batch</button>
+    </div>
+    <div class="card-body">
+      <div class="progress-bar-wrap">
+        <div class="progress-label">
+          <span id="progress-label-text">Processing…</span>
+          <span id="progress-label-count">0 / 0</span>
+        </div>
+        <div class="progress-bar"><div class="progress-bar-fill" id="progress-bar-fill" style="width:0%"></div></div>
+      </div>
+      <div id="pipeline-blocks"><!-- per-file pipeline blocks injected here --></div>
+    </div>
+  </div>
+
+  <!-- Error panel (fatal / config errors) -->
+  <div class="card" id="error-panel">
+    <div class="card-header" style="color:var(--red)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      Error
+    </div>
+    <div class="card-body">
+      <div class="error-box">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" style="flex-shrink:0;margin-top:2px">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <div>
+          <h3 id="err-title">Error</h3>
+          <p id="err-desc"></p>
+          <code id="err-detail" style="display:none"></code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div class="card" id="results">
+    <div class="card-header">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+      Extraction Results
+    </div>
+
+    <div style="padding: 14px 18px 0;">
+      <!-- Tabs: per-file | combined -->
+      <div class="results-tabs" id="results-tabs"></div>
+    </div>
+
+    <div id="results-tab-content"></div>
+
+    <!-- Global actions -->
+    <div class="global-actions">
+      <span class="ga-label">Export:</span>
+      <button class="btn btn-outline btn-sm" id="copy-csv-btn">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy CSV
+      </button>
+      <button class="btn btn-primary btn-sm" id="download-csv-btn">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download CSV
+      </button>
+      <a id="sheets-link" href="#" target="_blank" class="btn btn-sheets btn-sm" style="display:none; text-decoration:none">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        Open in Sheets
+      </a>
+    </div>
+  </div>
+
+  <!-- History panel -->
+  <div class="card" id="history-panel">
+    <div class="card-header collapsible-toggle open" id="history-toggle" onclick="toggleHistory()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 8 12 12 14 14"/></svg>
+      Processing History
+      <span class="chevron" style="margin-left:4px">▾</span>
+      <span id="history-db-status" style="margin-left:auto; font-size:.7rem; font-weight:400; color:var(--gray-500)">Not connected</span>
+    </div>
+    <div class="collapsible-body open" id="history-body">
+
+      <!-- Supabase config (collapsible) -->
+      <div class="history-config">
+        <div class="history-config-row">
+          <label>Supabase URL</label>
+          <input type="url" id="sb-url" placeholder="https://xxxx.supabase.co" />
+        </div>
+        <div class="history-config-row">
+          <label>Anon Key</label>
+          <input type="password" id="sb-key" placeholder="eyJ…" />
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button class="btn btn-outline btn-sm" id="sb-connect-btn" onclick="connectSupabase()">Connect</button>
+          <button class="btn btn-outline btn-sm" id="sb-refresh-btn" onclick="loadHistory()" style="display:none">↺ Refresh</button>
+          <span class="history-config-note">
+            Credentials saved in your browser. See <a href="https://supabase.com/docs" target="_blank">Supabase docs</a> for setup.
+          </span>
+        </div>
+      </div>
+
+      <!-- History table -->
+      <div class="history-toolbar">
+        <span style="font-size:.8rem; font-weight:600; color:var(--gray-700)">Recent runs</span>
+        <input type="text" id="history-search" placeholder="Search filename or LPO…"
+          style="padding:5px 10px; border:1px solid var(--gray-300); border-radius:6px; font-size:.78rem; outline:none; width:200px;" oninput="filterHistory()" />
+        <button class="btn btn-outline btn-sm" onclick="loadHistory()">↺</button>
+        <span class="ht-count" id="history-count"></span>
+      </div>
+
+      <div class="history-table-wrap">
+        <div class="history-loading" id="history-loading" style="display:none">Loading…</div>
+        <div class="history-empty" id="history-empty" style="display:none">
+          Connect Supabase to view history. First-time setup: create a table called <code>lpo_runs</code> — see the README.
+        </div>
+        <table class="history-table" id="history-table" style="display:none">
+          <thead>
+            <tr>
+              <th>Filename</th>
+              <th>LPO Numbers</th>
+              <th>Items</th>
+              <th>OK</th>
+              <th>Review</th>
+              <th>Status</th>
+              <th>Processed</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="history-tbody"></tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+// ────────────────────────────────────────────────────────────────────────────
+// State
+// ────────────────────────────────────────────────────────────────────────────
+let queue = []; // { id, file, status: pending|active|done|error, rows:[], error:null }
+let allRows = [];
+let csvContent = '';
+let processing = false;
+
+const STAGES = [
+  {id:'download',label:'Download'},{id:'detect',label:'Detect'},
+  {id:'classify',label:'Classify'},{id:'extract',label:'Extract'},
+  {id:'consensus',label:'Consensus'},{id:'sku',label:'SKU Match'},
+  {id:'validate',label:'Validate'},{id:'dedup',label:'Dedup'},
+  {id:'output',label:'Output'},
+];
+
+// ────────────────────────────────────────────────────────────────────────────
+// File input
+// ────────────────────────────────────────────────────────────────────────────
+const dropZone  = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  addFiles([...e.dataTransfer.files]);
+});
+fileInput.addEventListener('change', () => { addFiles([...fileInput.files]); fileInput.value = ''; });
+
+const MAX_FILES = 20;
+
+function addFiles(files) {
+  let skippedType = 0, skippedDup = 0, skippedLimit = 0;
+  files.forEach(f => {
+    if (!isAllowed(f)) { skippedType++; return; }
+    if (queue.some(q => q.file.name === f.name && q.file.size === f.size)) { skippedDup++; return; }
+    if (queue.length >= MAX_FILES) { skippedLimit++; return; }
+    queue.push({ id: uid(), file: f, status: 'pending', rows: [], error: null, flagged: false });
+  });
+
+  const warnings = [];
+  if (skippedType)  warnings.push(`${skippedType} unsupported file type${skippedType>1?'s':''} skipped`);
+  if (skippedDup)   warnings.push(`${skippedDup} duplicate${skippedDup>1?'s':''} skipped`);
+  if (skippedLimit) warnings.push(`${skippedLimit} file${skippedLimit>1?'s':''} over the 20-file limit`);
+  if (warnings.length) showToast(warnings.join(' · '), 'warn');
+
+  renderQueue();
+}
+
+function isAllowed(f) {
+  return /\.(pdf|png|jpg|jpeg|webp|tiff?)/i.test(f.name);
+}
+
+function uid() { return Math.random().toString(36).slice(2,9); }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Queue rendering
+// ────────────────────────────────────────────────────────────────────────────
+function renderQueue() {
+  const container = document.getElementById('file-queue');
+  const controls  = document.getElementById('queue-controls');
+
+  if (queue.length === 0) {
+    container.innerHTML = '';
+    controls.style.display = 'none';
+    return;
+  }
+  controls.style.display = 'flex';
+
+  container.innerHTML = queue.map(q => {
+    // Show "flagged" status if done but pipeline flagged it as bad
+    const rowStatus = (q.status === 'done' && q.flagged) ? 'flagged' : q.status;
+    const flagNote  = q.flagged ? `<span style="font-size:.68rem;color:#c2410c;font-weight:700">⚠ ${escHtml(q.flagReason||'Flagged')}</span>` : '';
+    return `
+    <div class="file-row status-${rowStatus}" id="fr-${q.id}">
+      ${fileIcon(q.file.name)}
+      <span class="fr-name" title="${escHtml(q.file.name)}">${escHtml(q.file.name)}</span>
+      <span class="fr-size">${formatBytes(q.file.size)}</span>
+      ${q.status === 'active' ? '<div class="fr-spinner"></div>' : ''}
+      ${flagNote}
+      <span class="fr-status">${statusLabel(rowStatus)}</span>
+      <span class="fr-jump" onclick="jumpToResult('${q.id}')">View ↓</span>
+      ${q.status !== 'active' ? `<span class="fr-remove" onclick="removeFromQueue('${q.id}')" title="Remove">✕</span>` : ''}
+    </div>`;
+  }).join('');
+
+  const pending = queue.filter(q => q.status === 'pending').length;
+  const done    = queue.filter(q => q.status === 'done').length;
+  const flagged = queue.filter(q => q.flagged).length;
+  const used    = queue.length;
+  const limitCls = used >= MAX_FILES ? 'full' : used >= MAX_FILES * 0.8 ? 'near' : '';
+  document.getElementById('queue-summary').innerHTML =
+    `${done} done · ${pending} pending · ${queue.filter(q=>q.status==='error').length} errors`
+    + (flagged ? ` · <span style="color:#c2410c;font-weight:700">${flagged} flagged</span>` : '')
+    + ` &nbsp;<span class="limit-pill ${limitCls}" title="Max 20 files per batch">${used}/${MAX_FILES}</span>`;
+
+  const btn = document.getElementById('process-btn');
+  btn.disabled = processing || pending === 0;
+  btn.textContent = processing ? 'Processing…' : `Process ${pending > 0 ? pending + ' Pending' : 'All'}`;
+}
+
+function statusLabel(s) {
+  return {pending:'Pending',active:'Processing…',done:'✓ Done',error:'✗ Error',flagged:'⚠ Flagged'}[s] || s;
+}
+
+function fileIcon(name) {
+  const isPdf = /\.pdf$/i.test(name);
+  return `<svg class="fr-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${isPdf?'#dc2626':'#2563eb'}" stroke-width="2">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+    <polyline points="14 2 14 8 20 8"/>
+  </svg>`;
+}
+
+function removeFromQueue(id) {
+  queue = queue.filter(q => q.id !== id);
+  renderQueue();
+}
+
+document.getElementById('clear-queue-btn').addEventListener('click', () => {
+  queue = queue.filter(q => q.status === 'active'); // don't kill in-progress
+  renderQueue();
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Processing
+// ────────────────────────────────────────────────────────────────────────────
+document.getElementById('process-btn').addEventListener('click', startProcessing);
+document.getElementById('reset-btn').addEventListener('click', resetAll);
+
+async function startProcessing() {
+  const webhookUrl = document.getElementById('webhook-url').value.trim();
+  if (!webhookUrl) { showFatalError('No webhook URL', 'Please enter your n8n webhook URL.'); return; }
+
+  processing = true;
+  hide('error-panel'); hide('results');
+  show('pipeline');
+  document.getElementById('reset-btn').style.display = 'none';
+  renderQueue();
+
+  const pending = queue.filter(q => q.status === 'pending');
+  const total = pending.length;
+  let done = 0;
+
+  updateProgress(done, total);
+
+  // Render all pipeline blocks first
+  pending.forEach(item => {
+    item.status = 'active';
+    renderPipelineBlock(item);
+  });
+  renderQueue();
+
+  // Stagger starts by 300ms each so CORS preflight + n8n don't get slammed simultaneously
+  await Promise.allSettled(pending.map(async (item, idx) => {
+    if (idx > 0) await new Promise(r => setTimeout(r, idx * 300));
+    await processOne(item, webhookUrl);
+    done++;
+    updateProgress(done, total);
+    renderQueue();
+    renderPipelineBlock(item);
+  }));
+
+  processing = false;
+  renderQueue();
+
+  // Build combined results
+  allRows = queue.filter(q => q.status === 'done').flatMap(q => q.rows);
+  if (allRows.length > 0) {
+    csvContent = toCSV(allRows);
+    buildResults();
+    show('results');
+
+    // Show Google Sheets link if any file returned one
+    const sheetsUrl = queue.filter(q=>q.sheetsUrl).map(q=>q.sheetsUrl)[0];
+    const sheetsBtn = document.getElementById('sheets-link');
+    if (sheetsUrl) { sheetsBtn.href = sheetsUrl; sheetsBtn.style.display = 'inline-flex'; }
+    else sheetsBtn.style.display = 'none';
+
+    // Save to Supabase history
+    await saveToHistory();
+  }
+
+  document.getElementById('reset-btn').style.display = 'inline-flex';
+  document.getElementById('progress-label-text').textContent = 'Complete';
+}
+
+async function processOne(item, webhookUrl) {
+  const stageIds = STAGES.map(s => s.id);
+
+  // Show stage 1 active immediately — we just wait for the real response.
+  // No timers, no fake progress, no timeout.
+  setStage(item.id, stageIds[0], 'active');
+  setPipelineMsg(item.id, '⏳ Uploading — waiting for n8n to respond…', '');
+
+  const form = new FormData();
+  form.append('file', item.file);
+  form.append('filename', item.file.name);       // ← explicit filename field
+  form.append('original_filename', item.file.name);
+  form.append('file_size', item.file.size);
+  form.append('file_type', item.file.type || detectMime(item.file.name));
+  form.append('source', 'lpo-frontend');
+
+  try {
+    // No timeout — fetch waits as long as n8n needs (up to browser limit ~10 min+)
+    let res;
+    try {
+      res = await fetch(webhookUrl, { method: 'POST', body: form });
+    } catch (networkErr) {
+      // CORS or network failure — the browser blocks the request before we see any response
+      const isCors = networkErr.message === 'Failed to fetch';
+      throw new Error(isCors
+        ? 'Network error — likely a CORS block.\n' +
+          'Fix: add N8N_CORS_ORIGIN=* to your Railway environment variables and redeploy.\n' +
+          'Also check you are using /webhook/LPO (not /webhook-test/LPO).\n' +
+          'Original: ' + networkErr.message
+        : networkErr.message
+      );
+    }
+
+    // Response arrived — mark stage 1 done, show parsing stage
+    setStage(item.id, stageIds[0], 'done');
+    setStage(item.id, stageIds[1], 'active');
+    setPipelineMsg(item.id, '⏳ Response received — parsing…', '');
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}: ${text.slice(0, 500)}`);
+    }
+
+    const ct = res.headers.get('content-type') || '';
+    const rawText = await res.text();
+    let data = null;
+    let binaryBlob = null;
+
+    if (!rawText.trim()) {
+      throw new Error(
+        `n8n responded with HTTP ${res.status} but an empty body.\n` +
+        `Content-Type: ${ct || '(none)'}\n\n` +
+        `Check your n8n workflow: make sure the "Respond to Webhook" node is the LAST node and is set to return the JSON rows.`
+      );
+    }
+
+    if (ct.includes('multipart')) {
+      // Re-parse as formData using a Response clone trick
+      const fd = await new Response(rawText, { headers: { 'content-type': ct } }).formData();
+      const binaryPart = fd.get('data');
+      if (binaryPart instanceof Blob) binaryBlob = binaryPart;
+      const jsonPart = fd.get('json') || fd.get('rows') || fd.get('output');
+      if (jsonPart) {
+        const s = typeof jsonPart === 'string' ? jsonPart : await jsonPart.text();
+        data = JSON.parse(s);
+      }
+    } else {
+      try {
+        data = JSON.parse(rawText);
+      } catch (e) {
+        throw new Error(
+          `n8n response is not valid JSON.\n` +
+          `Status: ${res.status} | Content-Type: ${ct || '(none)'}\n` +
+          `First 400 chars of body:\n${rawText.slice(0, 400)}`
+        );
+      }
+
+      // Optional: binary embedded as base64
+      const top = Array.isArray(data) ? (data[0] || {}) : data;
+      const b64 = top.file_base64 || top.binary || top.document_base64 || null;
+      if (b64) {
+        try {
+          const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+          binaryBlob = new Blob([bytes], { type: top.file_mime || 'application/octet-stream' });
+        } catch { /* ignore */ }
+      }
+    }
+
+    // ── Store binary preview URL (falls back to uploaded file in buildPreview) ──
+    if (binaryBlob) {
+      item.previewUrl  = URL.createObjectURL(binaryBlob);
+      item.previewMime = binaryBlob.type;
+    }
+
+    // ── Detect pipeline-level flags from n8n ────────────────────────────
+    const topLevel = Array.isArray(data) ? (data[0] || {}) : (data || {});
+    const pipelineStatus = String(topLevel.status || topLevel.pipeline_status || '').toUpperCase();
+    const flagReasons = {
+      CORRUPTED:      'File appears corrupted or unreadable',
+      FAILED:         'Pipeline processing failed',
+      QUALITY_FAIL:   `Quality score too low (${topLevel.quality_score ?? '?'} < 0.5)`,
+      WRONG_SUPPLIER: 'Not a Melvin/Marsh supplier — rejected',
+      DUPLICATE:      'Duplicate LPO — already processed',
+    };
+    if (data && flagReasons[pipelineStatus]) {
+      item.status     = 'done';
+      item.flagged    = true;
+      item.flagReason = flagReasons[pipelineStatus];
+      item.rows       = [];
+      stageIds.forEach(id => setStage(item.id, id, 'done'));
+      return;
+    }
+
+    if (!data) throw new Error('No JSON data in response.');
+    if (!Array.isArray(data) && data.error && !data.rows && !data.data) {
+      throw new Error(String(data.error));
+    }
+
+    const rows = parseRows(data);
+    if (rows.length === 0) throw new Error('Webhook returned no rows. Check n8n output mapping.');
+
+    // Tag every row with the source filename
+    rows.forEach(r => { r.__source_file = item.file.name; });
+    item.rows   = rows;
+    item.status = 'done';
+
+    // Capture Google Sheets URL
+    item.sheetsUrl = topLevel.sheets_url || topLevel.sheetsUrl || topLevel.google_sheets_url || null;
+
+    // Flag: ALL rows need review, or avg accuracy < 75%
+    const allReview = rows.every(r => String(r.Status || r.status || '').toUpperCase() === 'REVIEW');
+    const avgAcc    = rows.reduce((s,r) => s + (parseFloat(String(r.Accuracy||r.accuracy||'100').replace('%',''))||100), 0) / rows.length;
+    if (allReview || avgAcc < 75) {
+      item.flagged    = true;
+      item.flagReason = allReview ? 'All items need review' : `Low avg accuracy (${Math.round(avgAcc)}%)`;
+    }
+
+    stageIds.forEach(id => setStage(item.id, id, 'done'));
+    setPipelineMsg(item.id, `✓ Extracted ${item.rows.length} line item${item.rows.length !== 1 ? 's' : ''}`, 'success');
+
+  } catch (err) {
+    item.status = 'error';
+    item.error  = err.message;
+    // Mark stage 1 as error (the only one that was active)
+    setStage(item.id, stageIds[0], 'error');
+    setPipelineMsg(item.id, '✗ ' + err.message, 'error');
+  }
+}
+
+function setPipelineMsg(itemId, text, type) {
+  const block = document.getElementById('pb-' + itemId);
+  const msg = block?.querySelector('.status-message');
+  if (!msg) return;
+  msg.className = 'status-message' + (type === 'error' ? ' error' : type === 'success' ? ' success' : '');
+  msg.innerHTML = escHtml(text).replace(/\n/g, '<br>');
+}
+
+function detectMime(name) {
+  if (/\.pdf$/i.test(name)) return 'application/pdf';
+  if (/\.png$/i.test(name)) return 'image/png';
+  if (/\.(jpg|jpeg)$/i.test(name)) return 'image/jpeg';
+  if (/\.webp$/i.test(name)) return 'image/webp';
+  if (/\.tiff?$/i.test(name)) return 'image/tiff';
+  return 'application/octet-stream';
+}
+
+// Fields that n8n adds for internal use — strip from display and CSV
+const INTERNAL_FIELDS = new Set(['combined_string', 'file_base64', 'binary', 'document_base64',
+  'file_mime', 'pipeline_status', 'quality_score', 'sheets_url', 'sheetsUrl', 'google_sheets_url']);
+
+function parseRows(data) {
+  let raw = [];
+  if (Array.isArray(data))        raw = data;
+  else if (Array.isArray(data.rows))  raw = data.rows;
+  else if (Array.isArray(data.data))  raw = data.data;
+  else if (Array.isArray(data.items)) raw = data.items;
+
+  if (!raw.length) return [];
+
+  // n8n embeds the full row set as a JSON string in combined_string on each item.
+  // Use that as the authoritative source — it has all rows, not just the first.
+  const first = raw[0];
+  if (first && first.combined_string) {
+    try {
+      const parsed = JSON.parse(first.combined_string);
+      if (Array.isArray(parsed) && parsed.length > 0) raw = parsed;
+    } catch { /* fall through to raw */ }
+  }
+
+  // Strip internal/meta fields before display
+  return raw.map(r => {
+    const clean = {};
+    for (const [k, v] of Object.entries(r)) {
+      if (!INTERNAL_FIELDS.has(k)) clean[k] = v;
+    }
+    return clean;
+  });
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Pipeline block rendering (per file)
+// ────────────────────────────────────────────────────────────────────────────
+function renderPipelineBlock(item) {
+  const container = document.getElementById('pipeline-blocks');
+  let block = document.getElementById('pb-' + item.id);
+  if (!block) {
+    block = document.createElement('div');
+    block.id = 'pb-' + item.id;
+    block.className = 'file-pipeline-block';
+    container.appendChild(block);
+  }
+
+  block.innerHTML = `
+    <div class="fpb-header">
+      ${fileIcon(item.file.name)}
+      <span class="fpb-filename">${escHtml(item.file.name)}</span>
+      <span style="font-size:.7rem;color:var(--gray-500);font-weight:400">${formatBytes(item.file.size)}</span>
+    </div>
+    <div class="pipeline-stages" id="stages-${item.id}">
+      ${STAGES.map((s,i) => `
+        <div class="stage" id="stage-${item.id}-${s.id}">
+          <div class="stage-dot">
+            <span class="stage-num">${i+1}</span>
+            <div class="stage-spinner"></div>
+          </div>
+          <div class="stage-label">${s.label}</div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="status-message${item.status==='error'?' error':(item.status==='done'&&!item.flagged)?' success':''}" style="margin-top:10px">
+      ${item.status==='error'
+        ? `✗ Failed: ${escHtml(item.error||'Unknown error')}`
+        : item.status==='done'
+          ? (item.flagged ? `⚠ Processed with flag — see below` : `✓ Extracted ${item.rows.length} line item${item.rows.length!==1?'s':''}`)
+          : 'Processing…'}
+    </div>
+    ${item.flagged ? `<div class="flag-box">⚠ <strong>${escHtml(item.file.name)}</strong> — ${escHtml(item.flagReason||'Needs attention')}</div>` : ''}
+  `;
+
+  // Re-apply stage states
+  if (item.status === 'done') STAGES.forEach(s => setStage(item.id, s.id, 'done'));
+  if (item.status === 'error') { /* left as-is by processOne */ }
+}
+
+function setStage(itemId, stageId, state) {
+  const el = document.getElementById(`stage-${itemId}-${stageId}`);
+  if (el) el.className = 'stage ' + state;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Progress bar
+// ────────────────────────────────────────────────────────────────────────────
+function updateProgress(done, total) {
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  document.getElementById('progress-bar-fill').style.width = pct + '%';
+  document.getElementById('progress-label-count').textContent = `${done} / ${total}`;
+  document.getElementById('progress-label-text').textContent = done === total && total > 0 ? 'Complete' : 'Processing…';
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Results
+// ────────────────────────────────────────────────────────────────────────────
+const COL_ORDER = [
+  'LPO_Number','Supplier','Supermarket','Branch','Date',
+  'Item_Code','Item_Description','Quantity','Unit_Price',
+  'Line_Total','Grand_Total','Math_Correct','Accuracy','Status'
+];
+
+function buildResults() {
+  const doneItems = queue.filter(q => q.status === 'done');
+  const tabBar = document.getElementById('results-tabs');
+  const content = document.getElementById('results-tab-content');
+
+  // Build tabs: one per file + combined
+  let tabsHtml = '';
+  let panesHtml = '';
+
+  // Combined tab first
+  tabsHtml += `<div class="rtab active" data-tab="combined" onclick="switchTab('combined')">
+    All Files <span class="rtab-badge">${allRows.length} rows</span>
+  </div>`;
+  panesHtml += `<div class="rtab-pane active" id="pane-combined">
+    ${buildCombinedPane(allRows)}
+  </div>`;
+
+  // Per-file tabs
+  doneItems.forEach(item => {
+    tabsHtml += `<div class="rtab" data-tab="${item.id}" onclick="switchTab('${item.id}')">
+      ${escHtml(shortName(item.file.name))} <span class="rtab-badge">${item.rows.length}</span>
+    </div>`;
+    panesHtml += `<div class="rtab-pane" id="pane-${item.id}">
+      ${buildFilePane(item)}
+    </div>`;
+  });
+
+  tabBar.innerHTML = tabsHtml;
+  content.innerHTML = panesHtml;
+}
+
+function switchTab(tabId) {
+  document.querySelectorAll('.rtab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
+  document.querySelectorAll('.rtab-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + tabId));
+}
+
+function buildCombinedPane(rows) {
+  return `
+    <div style="padding:14px 18px">
+      <div class="summary-cards" style="padding:0;margin-bottom:12px">${summaryCards(rows)}</div>
+      <div class="table-wrapper">${buildTable(rows, true)}</div>
+    </div>
+  `;
+}
+
+function buildFilePane(item) {
+  const previewHtml = buildPreview(item);
+  return `
+    <div id="result-${item.id}" class="file-result">
+      <div class="results-grid">
+        <div class="preview-pane">
+          <div class="pane-header">📄 Original Document</div>
+          ${previewHtml}
+        </div>
+        <div class="data-pane">
+          <div class="pane-header">🤖 Extracted Data</div>
+          <div class="summary-cards">${summaryCards(item.rows)}</div>
+          <div class="table-wrapper">${buildTable(item.rows, false)}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function buildPreview(item) {
+  // Prefer binary returned by n8n (may be annotated/processed), fall back to uploaded file
+  const url    = item.previewUrl || URL.createObjectURL(item.file);
+  const mime   = item.previewMime || item.file.type || detectMime(item.file.name);
+  const isPdf  = mime === 'application/pdf' || /\.pdf$/i.test(item.file.name);
+  const source = item.previewUrl ? '(n8n processed)' : '(uploaded)';
+  return `
+    <div class="preview-toolbar">
+      ${fileIcon(item.file.name)}
+      <span class="ptb-name" title="${escHtml(item.file.name)}">${escHtml(item.file.name)}</span>
+      <span style="font-size:.65rem;color:var(--gray-500);margin-left:4px">${source}</span>
+      <a href="${url}" download="${escHtml(item.file.name)}" style="font-size:.7rem;color:var(--blue);text-decoration:none;font-weight:600;margin-left:auto">⬇ Save</a>
+    </div>
+    ${isPdf
+      ? `<object class="preview-frame" style="display:block" data="${url}" type="application/pdf">
+           <div style="padding:24px;text-align:center;font-size:.82rem;color:var(--gray-500)">
+             PDF preview unavailable in this browser.<br>
+             <a href="${url}" download="${escHtml(item.file.name)}" style="color:var(--blue);font-weight:600">⬇ Download to view</a>
+           </div>
+         </object>`
+      : `<img class="preview-img" style="display:block" src="${url}" alt="${escHtml(item.file.name)}" />`
+    }
+  `;
+}
+
+function summaryCards(rows) {
+  const lpos   = new Set(rows.map(r => norm(r,'LPO_Number'))).size;
+  const ok     = rows.filter(r => norm(r,'Status').toUpperCase() === 'OK').length;
+  const review = rows.filter(r => norm(r,'Status').toUpperCase() === 'REVIEW').length;
+  return `
+    <div class="scard"><div class="label">LPOs</div><div class="value">${lpos}</div></div>
+    <div class="scard"><div class="label">Items</div><div class="value">${rows.length}</div></div>
+    <div class="scard ok"><div class="label">✓ OK</div><div class="value">${ok}</div></div>
+    <div class="scard ${review>0?'warn':''}"><div class="label">⚠ Review</div><div class="value">${review}</div></div>
+  `;
+}
+
+function buildTable(rows, includeSourceCol) {
+  if (!rows.length) return '<p style="padding:12px;font-size:.82rem;color:var(--gray-500)">No data.</p>';
+  const allKeys = Object.keys(rows[0]).filter(k => k !== '__source_file');
+  const cols = COL_ORDER.filter(c => allKeys.some(k => k.toLowerCase() === c.toLowerCase()));
+  allKeys.forEach(k => { if (!cols.some(c => c.toLowerCase() === k.toLowerCase())) cols.push(k); });
+  const keyOf = col => allKeys.find(k => k.toLowerCase() === col.toLowerCase()) || col;
+
+  const extraCols = includeSourceCol ? ['Source File'] : [];
+  const thead = [...extraCols, ...cols].map(c => `<th>${c.replace(/_/g,' ')}</th>`).join('');
+  const tbody = rows.map(row => {
+    const srcCell = includeSourceCol
+      ? `<td class="col-source" title="${escHtml(row.__source_file||'')}">${escHtml(shortName(row.__source_file||''))}</td>`
+      : '';
+    return `<tr>${srcCell}${cols.map(col => `<td>${formatCell(col, row[keyOf(col)]??'')}</td>`).join('')}</tr>`;
+  }).join('');
+  return `<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>`;
+}
+
+function formatCell(col, val) {
+  const c = col.toLowerCase();
+  const v = String(val);
+  if (c === 'status') {
+    const cls = v.toUpperCase()==='OK'?'badge-ok':v.toUpperCase()==='REVIEW'?'badge-review':'badge-wrong';
+    return `<span class="${cls}">${escHtml(v)}</span>`;
+  }
+  if (c === 'math_correct') {
+    return `<span class="${v.toUpperCase()==='TRUE'?'badge-true':'badge-false'}">${escHtml(v)}</span>`;
+  }
+  if (c === 'accuracy') {
+    const pct = parseFloat(v.replace('%',''))||0;
+    const color = pct>=90?'#16a34a':pct>=75?'#d97706':'#dc2626';
+    return `<div class="acc-bar-wrap"><div class="acc-bar"><div class="acc-bar-fill" style="width:${pct}%;background:${color}"></div></div><span class="acc-text" style="color:${color}">${escHtml(v)}</span></div>`;
+  }
+  if (['unit_price','line_total','grand_total','quantity'].includes(c)) {
+    return `<span style="font-variant-numeric:tabular-nums;font-family:monospace">${escHtml(v)}</span>`;
+  }
+  return escHtml(v);
+}
+
+function jumpToResult(id) {
+  switchTab(id);
+  document.getElementById('result-' + id)?.scrollIntoView({behavior:'smooth'});
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// CSV
+// ────────────────────────────────────────────────────────────────────────────
+function toCSV(rows) {
+  if (!rows.length) return '';
+  // Put Source File first
+  const keys = ['__source_file', ...Object.keys(rows[0]).filter(k => k !== '__source_file')];
+  const header = ['Source_File', ...keys.slice(1)].join(',');
+  const body = rows.map(r =>
+    keys.map(k => {
+      const v = String(r[k] ?? '');
+      return v.includes(',') || v.includes('"') || v.includes('\n') ? `"${v.replace(/"/g,'""')}"` : v;
+    }).join(',')
+  );
+  return [header, ...body].join('\r\n');
+}
+
+document.getElementById('download-csv-btn').addEventListener('click', () => {
+  if (!csvContent) return;
+  const blob = new Blob([csvContent], {type:'text/csv'});
+  const a = Object.assign(document.createElement('a'), {href: URL.createObjectURL(blob), download: `LPO_${new Date().toISOString().slice(0,10)}.csv`});
+  a.click();
+});
+
+document.getElementById('copy-csv-btn').addEventListener('click', () => {
+  if (!csvContent) return;
+  navigator.clipboard.writeText(csvContent).then(() => {
+    const btn = document.getElementById('copy-csv-btn');
+    const orig = btn.innerHTML;
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.innerHTML = orig; }, 2000);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Error / reset
+// ────────────────────────────────────────────────────────────────────────────
+function showFatalError(title, desc, detail='') {
+  document.getElementById('err-title').textContent = title;
+  document.getElementById('err-desc').textContent = desc;
+  const code = document.getElementById('err-detail');
+  if (detail) { code.textContent = detail; code.style.display = 'block'; }
+  else code.style.display = 'none';
+  show('error-panel');
+}
+
+function resetAll() {
+  queue = []; allRows = []; csvContent = ''; processing = false;
+  document.getElementById('pipeline-blocks').innerHTML = '';
+  document.getElementById('results-tabs').innerHTML = '';
+  document.getElementById('results-tab-content').innerHTML = '';
+  hide('pipeline'); hide('results'); hide('error-panel');
+  document.getElementById('reset-btn').style.display = 'none';
+  renderQueue();
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Toast
+// ────────────────────────────────────────────────────────────────────────────
+let toastTimer = null;
+function showToast(msg, type = 'info') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + (type === 'warn' ? 'warn' : type === 'error' ? 'error' : type === 'ok' ? 'ok' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = ''; }, 3500);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ────────────────────────────────────────────────────────────────────────────
+function show(id) { document.getElementById(id).style.display = 'block'; }
+function hide(id) { document.getElementById(id).style.display = 'none'; }
+function formatBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n/1024).toFixed(1) + ' KB';
+  return (n/1048576).toFixed(1) + ' MB';
+}
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function norm(row, col) { return String(row[col] ?? row[col.toLowerCase()] ?? ''); }
+function shortName(name) {
+  if (!name) return '';
+  return name.length > 28 ? '…' + name.slice(-26) : name;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Demo
+// ────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// Supabase & History
+// ────────────────────────────────────────────────────────────────────────────
+let sbClient = null;
+let historyRows = [];
+const LS_SB_URL = 'lpo_sb_url';
+const LS_SB_KEY = 'lpo_sb_key';
+const LS_WH_URL = 'lpo_wh_url';
+const TABLE     = 'lpo_runs';
+
+// Restore saved config on load
+window.addEventListener('DOMContentLoaded', () => {
+  const sbUrl = localStorage.getItem(LS_SB_URL);
+  const sbKey = localStorage.getItem(LS_SB_KEY);
+  const whUrl = localStorage.getItem(LS_WH_URL);
+  if (sbUrl) document.getElementById('sb-url').value = sbUrl;
+  if (sbKey) document.getElementById('sb-key').value = sbKey;
+  if (whUrl) document.getElementById('webhook-url').value = whUrl;
+  if (sbUrl && sbKey) connectSupabase(true);
+
+  // Persist webhook URL automatically
+  document.getElementById('webhook-url').addEventListener('change', e => {
+    localStorage.setItem(LS_WH_URL, e.target.value.trim());
+  });
+});
+
+function connectSupabase(silent = false) {
+  if (window._sbLoadFailed || typeof supabase === 'undefined') {
+    showToast('Supabase library failed to load — check your internet connection', 'error');
+    return;
+  }
+  const url = document.getElementById('sb-url').value.trim();
+  const key = document.getElementById('sb-key').value.trim();
+  if (!url || !key) { if (!silent) showToast('Enter Supabase URL and anon key', 'warn'); return; }
+
+  try {
+    sbClient = supabase.createClient(url, key);
+    localStorage.setItem(LS_SB_URL, url);
+    localStorage.setItem(LS_SB_KEY, key);
+    document.getElementById('sb-refresh-btn').style.display = 'inline-flex';
+    document.getElementById('history-db-status').textContent = '● Connected';
+    document.getElementById('history-db-status').style.color = 'var(--green)';
+    loadHistory();
+    if (!silent) showToast('Connected to Supabase', 'ok');
+  } catch (e) {
+    showToast('Supabase connection failed: ' + e.message, 'error');
+  }
+}
+
+async function loadHistory() {
+  if (!sbClient) { showHistoryEmpty(); return; }
+  document.getElementById('history-loading').style.display = 'block';
+  document.getElementById('history-table').style.display  = 'none';
+  document.getElementById('history-empty').style.display  = 'none';
+
+  const { data, error } = await sbClient
+    .from(TABLE)
+    .select('*')
+    .order('processed_at', { ascending: false })
+    .limit(200);
+
+  document.getElementById('history-loading').style.display = 'none';
+
+  if (error) {
+    showToast('History load error: ' + error.message, 'error');
+    showHistoryEmpty();
+    return;
+  }
+
+  historyRows = data || [];
+  renderHistory(historyRows);
+}
+
+function renderHistory(rows) {
+  if (!rows.length) { showHistoryEmpty(); return; }
+  document.getElementById('history-empty').style.display = 'none';
+  document.getElementById('history-table').style.display = 'table';
+  document.getElementById('history-count').textContent   = `${rows.length} record${rows.length!==1?'s':''}`;
+
+  document.getElementById('history-tbody').innerHTML = rows.map(r => {
+    const statusCls = r.flagged ? 'badge-review' : r.status === 'error' ? 'badge-wrong' : 'badge-ok';
+    const statusTxt = r.flagged ? `⚠ ${escHtml(r.flag_reason||'Flagged')}` : r.status === 'error' ? '✗ Error' : '✓ OK';
+    const lpoList = (r.lpo_numbers || []).join(', ');
+    const date    = r.processed_at ? new Date(r.processed_at).toLocaleString() : '—';
+    return `<tr>
+      <td class="ht-filename" title="${escHtml(r.filename)}">${escHtml(r.filename)}</td>
+      <td class="ht-lpos" title="${escHtml(lpoList)}">${escHtml(lpoList) || '—'}</td>
+      <td style="text-align:center">${r.row_count ?? '—'}</td>
+      <td style="text-align:center;color:var(--green);font-weight:700">${r.ok_count ?? '—'}</td>
+      <td style="text-align:center;color:var(--amber);font-weight:700">${r.review_count ?? '—'}</td>
+      <td><span class="${statusCls}">${statusTxt}</span></td>
+      <td class="ht-date">${escHtml(date)}</td>
+      <td>
+        <div style="display:flex;gap:5px;align-items:center">
+          ${r.csv_data ? `<button class="btn btn-outline btn-sm" onclick="redownloadCSV(${r.id}, '${escHtml(r.filename)}')">⬇ CSV</button>` : ''}
+          ${r.sheets_url ? `<a href="${escHtml(r.sheets_url)}" target="_blank" class="btn btn-sheets btn-sm" style="text-decoration:none">Sheets</a>` : ''}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function showHistoryEmpty() {
+  document.getElementById('history-table').style.display  = 'none';
+  document.getElementById('history-empty').style.display  = 'block';
+  document.getElementById('history-count').textContent    = '';
+}
+
+function filterHistory() {
+  const q = document.getElementById('history-search').value.toLowerCase();
+  if (!q) { renderHistory(historyRows); return; }
+  renderHistory(historyRows.filter(r =>
+    (r.filename||'').toLowerCase().includes(q) ||
+    (r.lpo_numbers||[]).some(l => l.toLowerCase().includes(q))
+  ));
+}
+
+function redownloadCSV(id, filename) {
+  const row = historyRows.find(r => r.id === id);
+  if (!row?.csv_data) return;
+  const blob = new Blob([row.csv_data], {type:'text/csv'});
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob),
+    download: filename.replace(/\.[^.]+$/, '') + '_extracted.csv'
+  });
+  a.click();
+}
+
+async function saveToHistory() {
+  if (!sbClient) return;
+
+  const doneItems = queue.filter(q => q.status === 'done' && q.rows.length > 0);
+  if (!doneItems.length) return;
+
+  const records = doneItems.map(item => {
+    const lpoNumbers = [...new Set(item.rows.map(r => r.LPO_Number || r.lpo_number || '').filter(Boolean))];
+    const okCount     = item.rows.filter(r => String(r.Status||r.status||'').toUpperCase() === 'OK').length;
+    const reviewCount = item.rows.filter(r => String(r.Status||r.status||'').toUpperCase() === 'REVIEW').length;
+    const fileCsv     = toCSV(item.rows);
+
+    return {
+      filename:      item.file.name,
+      lpo_numbers:   lpoNumbers,
+      row_count:     item.rows.length,
+      ok_count:      okCount,
+      review_count:  reviewCount,
+      flagged:       item.flagged || false,
+      flag_reason:   item.flagReason || null,
+      sheets_url:    item.sheetsUrl || null,
+      csv_data:      fileCsv,
+      status:        item.flagged ? 'flagged' : 'done',
+      processed_at:  new Date().toISOString(),
+    };
+  });
+
+  const { error } = await sbClient.from(TABLE).insert(records);
+  if (error) {
+    showToast('History save failed: ' + error.message, 'warn');
+  } else {
+    showToast(`Saved ${records.length} record${records.length!==1?'s':''} to history`, 'ok');
+    loadHistory(); // refresh
+  }
+}
+
+function toggleHistory() {
+  const toggle = document.getElementById('history-toggle');
+  const body   = document.getElementById('history-body');
+  toggle.classList.toggle('open');
+  body.classList.toggle('open');
+}
+
+window.__loadDemo = function() {
+  const SAMPLE = [
+    {LPO_Number:"QM-00044246",Supplier:"MELVIN MARSH INTERNATIONAL",Supermarket:"QUICK MART",Branch:"47 - OTC BRANCH",Date:"2025-07-08",Item_Code:"MM-420643",Item_Description:"MELVIN TEA LEAVES 50G",Quantity:"12.00",Unit_Price:"54.41",Line_Total:"652.92",Grand_Total:"3,567.58",Math_Correct:"TRUE",Accuracy:"100%",Status:"OK"},
+    {LPO_Number:"QM-00044246",Supplier:"MELVIN MARSH INTERNATIONAL",Supermarket:"QUICK MART",Branch:"47 - OTC BRANCH",Date:"2025-07-08",Item_Code:"MM-390440",Item_Description:"MELVIN CHAI MASALA 100G",Quantity:"24.00",Unit_Price:"125.40",Line_Total:"3,009.60",Grand_Total:"3,567.58",Math_Correct:"TRUE",Accuracy:"100%",Status:"OK"},
+    {LPO_Number:"NV-P034828181",Supplier:"MELVIN MARSH INTERNATIONAL",Supermarket:"NAIVAS",Branch:"NYALI BAZAAR",Date:"2025-11-02",Item_Code:"MM-203501",Item_Description:"MELVIN GREEN TEA 250G",Quantity:"5.00",Unit_Price:"240.00",Line_Total:"1,200.00",Grand_Total:"4,850.00",Math_Correct:"TRUE",Accuracy:"100%",Status:"OK"},
+    {LPO_Number:"QM-00044389",Supplier:"MELVIN MARSH INTERNATIONAL",Supermarket:"QUICK MART",Branch:"23 - WESTLANDS",Date:"2025-07-12",Item_Code:"MM-657908",Item_Description:"MELVIN BREAKFAST TEA 45G",Quantity:"18.00",Unit_Price:"77.73",Line_Total:"1,399.14",Grand_Total:"7,215.50",Math_Correct:"FALSE",Accuracy:"75%",Status:"REVIEW"},
+    {LPO_Number:"NV-P034829456",Supplier:"ACME TEA LTD",Supermarket:"NAIVAS",Branch:"CBD BRANCH",Date:"2025-11-15",Item_Code:"AT-501234",Item_Description:"ACME PREMIUM TEA 300G",Quantity:"8.00",Unit_Price:"310.00",Line_Total:"2,480.00",Grand_Total:"2,480.00",Math_Correct:"TRUE",Accuracy:"100%",Status:"WRONG SUPPLIER"},
+  ];
+
+  // Fake two files
+  const makeBlob = (name) => new File(['dummy'], name, {type: name.endsWith('.pdf')?'application/pdf':'image/png'});
+  const f1 = makeBlob('QM-00044246_quickmart.pdf');
+  const f2 = makeBlob('NV-P034828181_naivas.png');
+
+  queue = [
+    {id:'demo1', file:f1, status:'done', rows: SAMPLE.slice(0,2).map(r=>({...r,__source_file:f1.name})), error:null},
+    {id:'demo2', file:f2, status:'done', rows: SAMPLE.slice(2).map(r=>({...r,__source_file:f2.name})), error:null},
+  ];
+
+  allRows = queue.flatMap(q => q.rows);
+  csvContent = toCSV(allRows);
+
+  renderQueue();
+  show('pipeline');
+  document.getElementById('pipeline-blocks').innerHTML = '';
+  queue.forEach(item => renderPipelineBlock(item));
+  updateProgress(2, 2);
+
+  buildResults();
+  show('results');
+  document.getElementById('reset-btn').style.display = 'inline-flex';
+};
+</script>
+
+</body>
+</html>
