@@ -124,7 +124,7 @@
     @keyframes spin { to { transform: rotate(360deg); } }
 
     .status-message { margin-top: 12px; padding: 9px 13px; border-radius: 8px; font-size: .82rem; font-weight: 500; background: var(--blue-light); color: var(--blue); display: flex; align-items: center; gap: 8px; }
-    .status-message.error { background: var(--red-light); color: var(--red); }
+    .status-message.error { background: transparent; color: var(--red); font-size: .75rem; font-weight: 400; padding: 4px 0; margin-top: 6px; border: none; display: inline-flex; }
     .status-message.success { background: var(--green-light); color: var(--green-dark); }
 
     /* Overall progress bar */
@@ -308,7 +308,7 @@
     <div class="card-body">
       <div class="config-row">
         <label>Webhook URL</label>
-        <input type="url" id="webhook-url" placeholder="https://your-n8n-instance/webhook/lpo-upload" />
+        <input type="url" id="webhook-url" placeholder="https://kidan8n.app.n8n.cloud/webhook/lpo-upload" />
       </div>
 
       <div id="drop-zone">
@@ -621,48 +621,42 @@ async function startProcessing() {
   hide('error-panel'); hide('results');
   show('pipeline');
   document.getElementById('reset-btn').style.display = 'none';
-  renderQueue();
 
   const pending = queue.filter(q => q.status === 'pending');
   const total = pending.length;
-  let done = 0;
 
-  updateProgress(done, total);
-
-  // Render all pipeline blocks first
+  // Mark all active and render pipeline blocks
   pending.forEach(item => {
     item.status = 'active';
     renderPipelineBlock(item);
   });
   renderQueue();
+  updateProgress(0, total);
 
-  // Stagger starts by 300ms each so CORS preflight + n8n don't get slammed simultaneously
-  await Promise.allSettled(pending.map(async (item, idx) => {
-    if (idx > 0) await new Promise(r => setTimeout(r, idx * 300));
+  // Process files one at a time so the test webhook can handle each in sequence
+  let done = 0;
+  for (const item of pending) {
     await processOne(item, webhookUrl);
     done++;
     updateProgress(done, total);
     renderQueue();
     renderPipelineBlock(item);
-  }));
+  }
 
   processing = false;
   renderQueue();
 
-  // Build combined results
   allRows = queue.filter(q => q.status === 'done').flatMap(q => q.rows);
   if (allRows.length > 0) {
     csvContent = toCSV(allRows);
     buildResults();
     show('results');
 
-    // Show Google Sheets link if any file returned one
-    const sheetsUrl = queue.filter(q=>q.sheetsUrl).map(q=>q.sheetsUrl)[0];
+    const sheetsUrl = queue.filter(q => q.sheetsUrl).map(q => q.sheetsUrl)[0];
     const sheetsBtn = document.getElementById('sheets-link');
     if (sheetsUrl) { sheetsBtn.href = sheetsUrl; sheetsBtn.style.display = 'inline-flex'; }
     else sheetsBtn.style.display = 'none';
 
-    // Save to Supabase history
     await saveToHistory();
   }
 
@@ -695,11 +689,8 @@ async function processOne(item, webhookUrl) {
       // CORS or network failure — the browser blocks the request before we see any response
       const isCors = networkErr.message === 'Failed to fetch';
       throw new Error(isCors
-        ? 'Network error — likely a CORS block.\n' +
-          'Fix: add N8N_CORS_ORIGIN=* to your Railway environment variables and redeploy.\n' +
-          'Also check you are using /webhook/LPO (not /webhook-test/LPO).\n' +
-          'Original: ' + networkErr.message
-        : networkErr.message
+        ? 'Server blocked the request (CORS). Make sure N8N_CORS_ORIGIN=* is set.'
+        : 'Cannot reach server — check the URL and your connection.'
       );
     }
 
@@ -710,7 +701,12 @@ async function processOne(item, webhookUrl) {
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`HTTP ${res.status}: ${text.slice(0, 500)}`);
+      const friendly = res.status === 404 ? 'Webhook URL not found — check the URL is correct and the workflow is active.'
+        : res.status === 401 || res.status === 403 ? 'Access denied — check the webhook URL.'
+        : res.status === 500 ? 'Server error — try again.'
+        : res.status === 503 ? 'Server unavailable — try again shortly.'
+        : `Server error ${res.status}.`;
+      throw new Error(friendly);
     }
 
     const ct = res.headers.get('content-type') || '';
@@ -719,11 +715,7 @@ async function processOne(item, webhookUrl) {
     let binaryBlob = null;
 
     if (!rawText.trim()) {
-      throw new Error(
-        `n8n responded with HTTP ${res.status} but an empty body.\n` +
-        `Content-Type: ${ct || '(none)'}\n\n` +
-        `Check your n8n workflow: make sure the "Respond to Webhook" node is the LAST node and is set to return the JSON rows.`
-      );
+      throw new Error('No data returned — workflow may have timed out. Try the production webhook (/webhook/ not /webhook-test/).');
     }
 
     if (ct.includes('multipart')) {
@@ -741,9 +733,8 @@ async function processOne(item, webhookUrl) {
         data = JSON.parse(rawText);
       } catch (e) {
         throw new Error(
-          `n8n response is not valid JSON.\n` +
-          `Status: ${res.status} | Content-Type: ${ct || '(none)'}\n` +
-          `First 400 chars of body:\n${rawText.slice(0, 400)}`
+          'The automation finished but sent back data in an unexpected format.\n\n' +
+          'What to do: Make sure the "Respond to Webhook" node in n8n is set to return the JSON rows array. Contact your IT contact if this keeps happening.'
         );
       }
 
@@ -789,7 +780,7 @@ async function processOne(item, webhookUrl) {
     }
 
     const rows = parseRows(data);
-    if (rows.length === 0) throw new Error('Webhook returned no rows. Check n8n output mapping.');
+    if (rows.length === 0) throw new Error('No order lines found — document may be empty or unsupported format.');
 
     // Tag every row with the source filename
     rows.forEach(r => { r.__source_file = item.file.name; });
@@ -815,7 +806,7 @@ async function processOne(item, webhookUrl) {
     item.error  = err.message;
     // Mark stage 1 as error (the only one that was active)
     setStage(item.id, stageIds[0], 'error');
-    setPipelineMsg(item.id, '✗ ' + err.message, 'error');
+    setPipelineMsg(item.id, err.message, 'error');
   }
 }
 
@@ -901,7 +892,7 @@ function renderPipelineBlock(item) {
     </div>
     <div class="status-message${item.status==='error'?' error':(item.status==='done'&&!item.flagged)?' success':''}" style="margin-top:10px">
       ${item.status==='error'
-        ? `✗ Failed: ${escHtml(item.error||'Unknown error')}`
+        ? `✗ ${escHtml(item.error||'Failed')}`
         : item.status==='done'
           ? (item.flagged ? `⚠ Processed with flag — see below` : `✓ Extracted ${item.rows.length} line item${item.rows.length!==1?'s':''}`)
           : 'Processing…'}
@@ -935,7 +926,7 @@ function updateProgress(done, total) {
 const COL_ORDER = [
   'LPO_Number','Supplier','Supermarket','Branch','Date',
   'Item_Code','Item_Description','Quantity','Unit_Price',
-  'Line_Total','Grand_Total','Math_Correct','Accuracy','Status'
+  'Line_Total','Grand_Total','Math_Correct','Accuracy','Status','Status_Reasons'
 ];
 
 function buildResults() {
@@ -985,6 +976,7 @@ function buildCombinedPane(rows) {
 
 function buildFilePane(item) {
   const previewHtml = buildPreview(item);
+  const dataHtml    = buildDataPane(item);
   return `
     <div id="result-${item.id}" class="file-result">
       <div class="results-grid">
@@ -994,11 +986,64 @@ function buildFilePane(item) {
         </div>
         <div class="data-pane">
           <div class="pane-header">🤖 Extracted Data</div>
-          <div class="summary-cards">${summaryCards(item.rows)}</div>
-          <div class="table-wrapper">${buildTable(item.rows, false)}</div>
+          ${dataHtml}
         </div>
       </div>
     </div>
+  `;
+}
+
+function buildDataPane(item) {
+  const rows = item.rows || [];
+
+  // Check if this is a rejection / all-empty result
+  const allEmpty = rows.length === 0 || rows.every(r => {
+    const lpo = norm(r,'LPO_Number');
+    const sup = norm(r,'Supplier');
+    return !lpo && !sup;
+  });
+
+  if (allEmpty || (rows.length === 1 && norm(rows[0],'Status').toUpperCase() === 'REJECTED')) {
+    const reason = rows[0]
+      ? (norm(rows[0],'Status_Reasons') || norm(rows[0],'status_reasons') || '')
+      : '';
+    const status = rows[0] ? norm(rows[0],'Status') : 'REJECTED';
+    const isFlagged = item.flagged;
+
+    const color     = status === 'REJECTED' ? 'var(--red)' : 'var(--amber)';
+    const bgColor   = status === 'REJECTED' ? 'var(--red-light)' : 'var(--amber-light)';
+    const borderColor = status === 'REJECTED' ? '#fca5a5' : '#fcd34d';
+    const icon      = status === 'REJECTED' ? '✗' : '⚠';
+    const headline  = status === 'REJECTED'
+      ? 'Document could not be processed'
+      : 'Document needs manual review';
+    const detail = reason
+      ? reason
+      : status === 'REJECTED'
+        ? 'The system was unable to extract order data from this file. This can happen if the document is not a valid LPO, the image quality is too low, or it is from an unsupported supplier.'
+        : 'Some fields could not be verified with enough confidence. Please review this document manually.';
+
+    return `
+      <div style="display:flex;flex-direction:column;gap:12px;padding:4px 0">
+        <div style="background:${bgColor};border:1px solid ${borderColor};border-radius:8px;padding:16px 18px;display:flex;gap:12px;align-items:flex-start">
+          <span style="font-size:1.4rem;line-height:1">${icon}</span>
+          <div>
+            <div style="font-weight:700;font-size:.9rem;color:${color};margin-bottom:4px">${headline}</div>
+            <div style="font-size:.82rem;color:var(--gray-700);line-height:1.5">${escHtml(detail)}</div>
+            ${isFlagged && item.flagReason ? `<div style="margin-top:6px;font-size:.78rem;font-weight:600;color:${color}">Flagged: ${escHtml(item.flagReason)}</div>` : ''}
+          </div>
+        </div>
+        <div style="font-size:.78rem;color:var(--gray-500);padding:0 2px">
+          Try re-uploading a clearer version of this file, or process it manually.
+        </div>
+      </div>
+    `;
+  }
+
+  // Normal display
+  return `
+    <div class="summary-cards">${summaryCards(rows)}</div>
+    <div class="table-wrapper">${buildTable(rows, false)}</div>
   `;
 }
 
@@ -1188,7 +1233,9 @@ window.addEventListener('DOMContentLoaded', () => {
   const whUrl = localStorage.getItem(LS_WH_URL);
   if (sbUrl) document.getElementById('sb-url').value = sbUrl;
   if (sbKey) document.getElementById('sb-key').value = sbKey;
-  if (whUrl) document.getElementById('webhook-url').value = whUrl;
+  if (whUrl) {
+    document.getElementById('webhook-url').value = whUrl;
+  }
   if (sbUrl && sbKey) connectSupabase(true);
 
   // Persist webhook URL automatically
@@ -1244,13 +1291,20 @@ async function loadHistory() {
   renderHistory(historyRows);
 }
 
+const HISTORY_PAGE_SIZE = 5;
+let historyShowAll = false;
+
 function renderHistory(rows) {
   if (!rows.length) { showHistoryEmpty(); return; }
   document.getElementById('history-empty').style.display = 'none';
   document.getElementById('history-table').style.display = 'table';
-  document.getElementById('history-count').textContent   = `${rows.length} record${rows.length!==1?'s':''}`;
 
-  document.getElementById('history-tbody').innerHTML = rows.map(r => {
+  const visible = historyShowAll ? rows : rows.slice(0, HISTORY_PAGE_SIZE);
+  const hidden  = rows.length - visible.length;
+
+  document.getElementById('history-count').textContent = `${rows.length} record${rows.length!==1?'s':''}`;
+
+  const rowsHtml = visible.map(r => {
     const statusCls = r.flagged ? 'badge-review' : r.status === 'error' ? 'badge-wrong' : 'badge-ok';
     const statusTxt = r.flagged ? `⚠ ${escHtml(r.flag_reason||'Flagged')}` : r.status === 'error' ? '✗ Error' : '✓ OK';
     const lpoList = (r.lpo_numbers || []).join(', ');
@@ -1271,6 +1325,20 @@ function renderHistory(rows) {
       </td>
     </tr>`;
   }).join('');
+
+  const moreHtml = hidden > 0
+    ? `<tr><td colspan="8" style="text-align:center;padding:10px">
+        <button class="btn btn-outline btn-sm" onclick="historyShowAll=true;renderHistory(historyRows)">
+          Show ${hidden} more record${hidden!==1?'s':''}
+        </button>
+       </td></tr>`
+    : (historyShowAll && rows.length > HISTORY_PAGE_SIZE
+        ? `<tr><td colspan="8" style="text-align:center;padding:10px">
+            <button class="btn btn-outline btn-sm" onclick="historyShowAll=false;renderHistory(historyRows)">Show less</button>
+           </td></tr>`
+        : '');
+
+  document.getElementById('history-tbody').innerHTML = rowsHtml + moreHtml;
 }
 
 function showHistoryEmpty() {
