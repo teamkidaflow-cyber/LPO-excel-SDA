@@ -102,8 +102,7 @@ export default function App() {
     setCsvContent('');
     setActiveTab('all');
     const pending = queue.filter(q => q.status === 'pending');
-    // Sequential — n8n drops binary data when concurrent requests arrive
-    for (const item of pending) await runOne(item, webhookUrl);
+    await Promise.all(pending.map(item => runOne(item, webhookUrl)));
     setProcessing(false);
     // Save once everything is done
     setQueue(q => {
