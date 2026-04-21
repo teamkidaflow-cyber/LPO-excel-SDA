@@ -26,12 +26,9 @@ export async function processFile(item, webhookUrl, onStageUpdate) {
     console.error('[webhook] fetch failed:', networkErr);
     const msg = networkErr.message || '';
     if (msg === 'Failed to fetch' || msg.includes('NetworkError') || msg.includes('CORS')) {
-      throw new Error(
-        'CORS error — n8n blocked the request from this browser. ' +
-        'In Railway, add env var N8N_CORS_ORIGIN=* and redeploy.'
-      );
+      throw new Error('CORS blocked — set N8N_CORS_ORIGIN=* in Railway env vars.');
     }
-    throw new Error(`Network error: ${msg || 'cannot reach server'}`);
+    throw new Error(`Network error — ${msg || 'cannot reach server'}`);
   }
 
   onStageUpdate({ stage: 0, state: 'done', msg: '' });
@@ -39,21 +36,18 @@ export async function processFile(item, webhookUrl, onStageUpdate) {
 
   if (!res.ok) {
     throw new Error(
-      res.status === 404 ? 'Webhook URL not found — check the URL is correct and the workflow is active.'
+      res.status === 404 ? 'Webhook not found — check the URL and that the workflow is active.'
       : res.status === 401 || res.status === 403 ? 'Access denied — check the webhook URL.'
-      : res.status >= 500 ? 'Server error — try again.'
-      : `Server error ${res.status}.`
+      : res.status >= 500 ? `Server error ${res.status} — try again.`
+      : `HTTP ${res.status}`
     );
   }
 
   const rawText = await res.text();
   if (!rawText.trim()) {
-    throw new Error(
-      'n8n returned an empty response. ' +
-      (webhookUrl.includes('webhook-test')
-        ? 'Test webhook: open n8n, click "Execute workflow", then upload.'
-        : 'Workflow may have timed out — check n8n execution logs.')
-    );
+    throw new Error(webhookUrl.includes('webhook-test')
+      ? 'Empty response — click Execute in n8n first.'
+      : 'Empty response — check n8n execution logs.');
   }
 
   let data;
@@ -64,7 +58,7 @@ export async function processFile(item, webhookUrl, onStageUpdate) {
   }
 
   if (!data || (Array.isArray(data) && data.length === 0)) {
-    throw new Error('n8n returned empty JSON. Check the workflow completed and the Respond node has data.');
+    throw new Error('Empty response — workflow may not have reached the Respond node.');
   }
 
   const top = Array.isArray(data) ? (data[0] || {}) : (data || {});

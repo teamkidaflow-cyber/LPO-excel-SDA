@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import Header from './components/Header';
 import DropZone from './components/DropZone';
 import FileQueue from './components/FileQueue';
@@ -18,6 +18,8 @@ export default function App() {
   const [processing, setProcessing] = useState(false);
   const [allRows, setAllRows]       = useState([]);
   const [csvContent, setCsvContent] = useState('');
+  const [activeTab, setActiveTab]   = useState('all');
+  const resultsRef = useRef(null);
 
   const saveUrl = url => { setWebhookUrl(url); localStorage.setItem(LS_WH, url); };
 
@@ -53,6 +55,18 @@ export default function App() {
       return { ...i, stages };
     }));
 
+  // Called after each file finishes — updates results immediately
+  const refreshResultsAfter = (updatedId, updatedItem) => {
+    setQueue(q => {
+      const merged = q.map(i => i.id === updatedId ? { ...i, ...updatedItem } : i);
+      const rows = merged.filter(i => i.status === 'done').flatMap(i => i.rows);
+      const csv = toCSV(rows);
+      setAllRows(rows);
+      setCsvContent(csv);
+      return merged;
+    });
+  };
+
   const runOne = async (item, url) => {
     updateItem(item.id, {
       status: 'active', stages: Array(STAGE_COUNT).fill('pending'),
@@ -63,31 +77,22 @@ export default function App() {
         setStage(item.id, stage, state);
         if (msg !== undefined) updateItem(item.id, { msg });
       });
-      updateItem(item.id, {
+      const patch = {
         status: 'done', stages: Array(STAGE_COUNT).fill('done'), msg: '',
         rows: result.rows, flagged: result.flagged,
         flagReason: result.flagReason, sheetsUrl: result.sheetsUrl,
-      });
+      };
+      refreshResultsAfter(item.id, patch);
     } catch (err) {
+      const short = err.message.length > 80 ? err.message.slice(0, 77) + '…' : err.message;
       setQueue(q => q.map(i => {
         if (i.id !== item.id) return i;
         const stages = [...i.stages];
         const activeIdx = stages.findIndex(s => s === 'active');
         if (activeIdx >= 0) stages[activeIdx] = 'error';
-        return { ...i, status: 'error', stages, error: err.message, msg: err.message };
+        return { ...i, status: 'error', stages, error: short, msg: short };
       }));
     }
-  };
-
-  const refreshResults = () => {
-    setQueue(q => {
-      const rows = q.filter(i => i.status === 'done').flatMap(i => i.rows);
-      const csv = toCSV(rows);
-      setAllRows(rows);
-      setCsvContent(csv);
-      if (rows.length) saveRun({ queue: q, allRows: rows, csvContent: csv });
-      return q;
-    });
   };
 
   const process = async () => {
@@ -95,10 +100,17 @@ export default function App() {
     setProcessing(true);
     setAllRows([]);
     setCsvContent('');
+    setActiveTab('all');
     const pending = queue.filter(q => q.status === 'pending');
-    for (const item of pending) await runOne(item, webhookUrl);
+    // Run all files in parallel
+    await Promise.all(pending.map(item => runOne(item, webhookUrl)));
     setProcessing(false);
-    refreshResults();
+    // Save once everything is done
+    setQueue(q => {
+      const rows = q.filter(i => i.status === 'done').flatMap(i => i.rows);
+      if (rows.length) saveRun({ queue: q, allRows: rows, csvContent: toCSV(rows) });
+      return q;
+    });
   };
 
   const rerunItem = async (id) => {
@@ -108,16 +120,20 @@ export default function App() {
     setProcessing(true);
     await runOne(item, webhookUrl);
     setProcessing(false);
-    refreshResults();
   };
 
-  const reset = () => { setQueue([]); setAllRows([]); setCsvContent(''); };
+  const reset = () => { setQueue([]); setAllRows([]); setCsvContent(''); setActiveTab('all'); };
 
-  const jumpTo = id =>
-    document.getElementById(`result-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const jumpTo = id => {
+    setActiveTab(id);
+    setTimeout(() => {
+      resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  };
 
   const sheetsUrl = queue.find(q => q.sheetsUrl)?.sheetsUrl || null;
   const showPipeline = queue.some(q => q.status !== 'pending');
+  const showResults  = allRows.length > 0 || queue.some(q => q.status === 'done');
 
   return (
     <>
@@ -143,13 +159,17 @@ export default function App() {
             </div>
           </div>
         )}
-        {allRows.length > 0 && (
-          <ResultsSection
-            queue={queue}
-            allRows={allRows}
-            csvContent={csvContent}
-            sheetsUrl={sheetsUrl}
-          />
+        {showResults && (
+          <div ref={resultsRef}>
+            <ResultsSection
+              queue={queue}
+              allRows={allRows}
+              csvContent={csvContent}
+              sheetsUrl={sheetsUrl}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+            />
+          </div>
         )}
       </main>
     </>

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react'; // useState used by RowModal
 import { COL_ORDER } from '../lib/utils';
 
 const STATUS_COLOR = { OK: 'var(--green)', REVIEW: 'var(--amber)', REJECTED: 'var(--red)' };
@@ -136,8 +136,9 @@ function FilePane({ item }) {
   );
 }
 
-export default function ResultsSection({ queue, allRows, csvContent, sheetsUrl }) {
-  const [tab, setTab] = useState('all');
+export default function ResultsSection({ queue, allRows, csvContent, sheetsUrl, activeTab, onTabChange }) {
+  const tab = activeTab ?? 'all';
+  const setTab = onTabChange ?? (() => {});
   const done = queue.filter(q => q.status === 'done');
   if (!done.length) return null;
 
