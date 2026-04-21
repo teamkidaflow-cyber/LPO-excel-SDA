@@ -102,8 +102,8 @@ export default function App() {
     setCsvContent('');
     setActiveTab('all');
     const pending = queue.filter(q => q.status === 'pending');
-    // Run all files in parallel
-    await Promise.all(pending.map(item => runOne(item, webhookUrl)));
+    // Sequential — n8n drops binary data when concurrent requests arrive
+    for (const item of pending) await runOne(item, webhookUrl);
     setProcessing(false);
     // Save once everything is done
     setQueue(q => {
@@ -131,9 +131,10 @@ export default function App() {
     }, 50);
   };
 
-  const sheetsUrl = queue.find(q => q.sheetsUrl)?.sheetsUrl || null;
+  const sheetsUrl    = queue.find(q => q.sheetsUrl)?.sheetsUrl || null;
   const showPipeline = queue.some(q => q.status !== 'pending');
-  const showResults  = allRows.length > 0 || queue.some(q => q.status === 'done');
+  const donItems     = queue.filter(q => q.status === 'done');
+  const showResults  = donItems.length > 0;
 
   return (
     <>
