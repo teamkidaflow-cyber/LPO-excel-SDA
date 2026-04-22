@@ -26,38 +26,58 @@ export const COL_ORDER = [
   'Math_Correct','Accuracy','Status','Status_Reasons','Source_File',
 ];
 
-// Extract LPO object from combined_string which is doubly-nested:
-// combined_string → JSON → [{content:[{type:"text", text:"{lpo_json}"}]}]
-function extractLpo(combinedStr) {
+// Extract ALL LPO objects from combined_string.
+// Structure: JSON array → each item has content[].text → JSON LPO object
+function extractLpos(combinedStr) {
   try {
     const outer = JSON.parse(combinedStr);
-    const text  = Array.isArray(outer) ? outer[0]?.content?.[0]?.text : null;
-    if (!text) return null;
-    return JSON.parse(text);
-  } catch { return null; }
+    if (!Array.isArray(outer)) return [];
+
+    const lpos = [];
+    for (const chunk of outer) {
+      // Handle [{content:[{type:"text",text:"..."}]}] format
+      const contents = chunk?.content || (chunk?.type === 'text' ? [chunk] : []);
+      for (const c of contents) {
+        if (c?.type !== 'text' || !c?.text) continue;
+        try {
+          const obj = JSON.parse(c.text);
+          if (obj && typeof obj === 'object') lpos.push(obj);
+        } catch {}
+      }
+      // Handle flat [{type:"text",text:"..."}] format at top level
+      if (chunk?.type === 'text' && chunk?.text) {
+        try {
+          const obj = JSON.parse(chunk.text);
+          if (obj && typeof obj === 'object' && !lpos.includes(obj)) lpos.push(obj);
+        } catch {}
+      }
+    }
+    return lpos;
+  } catch { return []; }
 }
 
 // Expand a single LPO object into one row per line item
 function lpoToRows(lpo, fallbackHeader = {}) {
   const header = {
-    LPO_Number:  lpo.lpo_number  || fallbackHeader.LPO_Number  || '',
-    Supplier:    lpo.supplier    || fallbackHeader.Supplier     || '',
-    Supermarket: lpo.supermarket || fallbackHeader.Supermarket  || '',
-    Branch:      lpo.branch      || fallbackHeader.Branch       || '',
-    Date:        lpo.date        || fallbackHeader.Date         || '',
-    Grand_Total: lpo.grand_total || '',
+    LPO_Number:  lpo.lpo_number  || lpo.LPO_Number  || fallbackHeader.LPO_Number  || '',
+    Supplier:    lpo.supplier    || lpo.Supplier     || fallbackHeader.Supplier     || '',
+    Supermarket: lpo.supermarket || lpo.Supermarket  || fallbackHeader.Supermarket  || '',
+    Branch:      lpo.branch      || lpo.Branch       || fallbackHeader.Branch       || '',
+    Date:        lpo.date        || lpo.Date         || fallbackHeader.Date         || '',
+    Grand_Total: lpo.grand_total || lpo.Grand_Total  || '',
   };
 
-  const items = lpo.line_items || [];
+  // Support multiple field names for line items
+  const items = lpo.line_items || lpo.items || lpo.products || lpo.rows || [];
   if (!items.length) return [header];
 
   return items.map(it => ({
     ...header,
-    Item_Code:        it.item_code   || it.barcode || '',
-    Item_Description: it.description || '',
-    Quantity:         it.quantity    ?? '',
-    Unit_Price:       it.unit_price  ?? '',
-    Line_Total:       it.line_total  ?? '',
+    Item_Code:        it.item_code        || it.barcode      || it.Item_Code   || '',
+    Item_Description: it.description      || it.Item_Description || it.name   || '',
+    Quantity:         it.quantity         ?? it.Quantity      ?? '',
+    Unit_Price:       it.unit_price       ?? it.Unit_Price    ?? '',
+    Line_Total:       it.line_total       ?? it.Line_Total    ?? '',
     Status: (it.quantity_confidence === 'high' || it.quantity_confidence == null)
       ? 'OK' : 'REVIEW',
   }));
@@ -75,9 +95,10 @@ export function parseRows(data) {
   if (raw[0]?.combined_string) {
     const rows = [];
     for (const item of raw) {
-      const lpo = extractLpo(item.combined_string);
-      if (lpo) {
-        rows.push(...lpoToRows(lpo, item));
+      const lpos = extractLpos(item.combined_string);
+      console.log('[parseRows] combined_string → lpos extracted:', lpos.length, lpos);
+      if (lpos.length) {
+        for (const lpo of lpos) rows.push(...lpoToRows(lpo, item));
       } else {
         // Fallback: clean the top-level fields
         const clean = {};
@@ -85,6 +106,7 @@ export function parseRows(data) {
         rows.push(clean);
       }
     }
+    console.log('[parseRows] total rows:', rows.length);
     return rows;
   }
 
