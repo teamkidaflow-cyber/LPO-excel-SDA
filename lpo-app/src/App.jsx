@@ -15,11 +15,13 @@ const STAGE_COUNT = 9;
 export default function App() {
   const [webhookUrl, setWebhookUrl] = useState(() => localStorage.getItem(LS_WH) || '');
   const [queue, setQueue]           = useState([]);
-  const [processing, setProcessing] = useState(false);
   const [allRows, setAllRows]       = useState([]);
   const [csvContent, setCsvContent] = useState('');
   const [activeTab, setActiveTab]   = useState('all');
   const resultsRef = useRef(null);
+
+  // Derived — true when at least one file is in flight
+  const processing = queue.some(q => q.status === 'active');
 
   const saveUrl = url => { setWebhookUrl(url); localStorage.setItem(LS_WH, url); };
 
@@ -97,14 +99,10 @@ export default function App() {
 
   const process = async () => {
     if (!webhookUrl) return;
-    setProcessing(true);
-    setAllRows([]);
-    setCsvContent('');
-    setActiveTab('all');
     const pending = queue.filter(q => q.status === 'pending');
+    if (!pending.length) return;
+    setActiveTab('all');
     await Promise.all(pending.map(item => runOne(item, webhookUrl)));
-    setProcessing(false);
-    // Save once everything is done
     setQueue(q => {
       const rows = q.filter(i => i.status === 'done').flatMap(i => i.rows);
       if (rows.length) saveRun({ queue: q, allRows: rows, csvContent: toCSV(rows) });
@@ -113,12 +111,10 @@ export default function App() {
   };
 
   const rerunItem = async (id) => {
-    if (!webhookUrl || processing) return;
+    if (!webhookUrl) return;
     const item = queue.find(i => i.id === id);
-    if (!item) return;
-    setProcessing(true);
+    if (!item || item.status === 'active') return;
     await runOne(item, webhookUrl);
-    setProcessing(false);
   };
 
   const reset = () => { setQueue([]); setAllRows([]); setCsvContent(''); setActiveTab('all'); };

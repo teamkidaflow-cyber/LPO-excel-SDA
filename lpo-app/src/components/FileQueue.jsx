@@ -43,7 +43,7 @@ export default function FileQueue({ queue, processing, onRemove, onProcess, onRe
               <EyeIcon />
             </button>
 
-            {item.status === 'error' && !processing && (
+            {item.status === 'error' && (
               <button className="fr-rerun" onClick={() => onRerun(item.id)} title="Retry">↺ Retry</button>
             )}
             {item.status === 'done' && (
@@ -59,10 +59,12 @@ export default function FileQueue({ queue, processing, onRemove, onProcess, onRe
       </div>
 
       <div className="queue-controls">
-        {!processing && pending > 0 && (
-          <button className="btn btn-primary" onClick={onProcess}>Process All</button>
+        {pending > 0 && (
+          <button className="btn btn-primary" onClick={onProcess}>
+            {processing ? `Process ${pending} pending` : 'Process All'}
+          </button>
         )}
-        {!processing && pending > 0 && (
+        {pending > 0 && (
           <button className="btn btn-outline btn-sm" onClick={() => onRemove('all')}>Clear Pending</button>
         )}
         {!processing && (done > 0 || errors > 0) && pending === 0 && (
