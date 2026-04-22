@@ -92,23 +92,40 @@ export function parseRows(data) {
   else if (Array.isArray(data?.items)) raw = data.items;
   if (!raw.length) return [];
 
-  // If first item has combined_string, extract LPO + line items from all items
+  // If first item has combined_string, parse it
   if (raw[0]?.combined_string) {
     const rows = [];
     for (const item of raw) {
-      console.log('[parseRows] raw combined_string:', item.combined_string);
-      const lpos = extractLpos(item.combined_string);
-      console.log('[parseRows] combined_string → lpos extracted:', lpos.length, lpos);
-      if (lpos.length) {
-        for (const lpo of lpos) rows.push(...lpoToRows(lpo, item));
-      } else {
-        // Fallback: clean the top-level fields
+      let outer;
+      try { outer = JSON.parse(item.combined_string); } catch { outer = null; }
+
+      if (!Array.isArray(outer) || !outer.length) {
+        // Fallback to top-level fields
         const clean = {};
         Object.keys(item).forEach(k => { if (!INTERNAL_FIELDS.has(k)) clean[k] = item[k]; });
         rows.push(clean);
+        continue;
+      }
+
+      if (outer[0]?.content) {
+        // Claude structured format: [{content:[{type:"text",text:"{lpo_json}"}]}]
+        const lpos = extractLpos(item.combined_string);
+        if (lpos.length) {
+          for (const lpo of lpos) rows.push(...lpoToRows(lpo, item));
+        } else {
+          const clean = {};
+          Object.keys(item).forEach(k => { if (!INTERNAL_FIELDS.has(k)) clean[k] = item[k]; });
+          rows.push(clean);
+        }
+      } else {
+        // Flat rows format: combined_string is already [{LPO_Number, Item_Description, ...}]
+        for (const row of outer) {
+          const clean = {};
+          Object.keys(row).forEach(k => { if (!INTERNAL_FIELDS.has(k)) clean[k] = row[k]; });
+          rows.push(clean);
+        }
       }
     }
-    console.log('[parseRows] total rows:', rows.length);
     return rows;
   }
 
