@@ -21,10 +21,47 @@ const INTERNAL_FIELDS = new Set([
 ]);
 
 export const COL_ORDER = [
-  'LPO_Number','Supplier','Supermarket','Branch','Date','Item_Code',
-  'Item_Description','Quantity','Unit_Price','Line_Total','Grand_Total',
+  'LPO_Number','Supplier','Supermarket','Branch','Date',
+  'Item_Code','Item_Description','Quantity','Unit_Price','Line_Total','Grand_Total',
   'Math_Correct','Accuracy','Status','Status_Reasons','Source_File',
 ];
+
+// Extract LPO object from combined_string which is doubly-nested:
+// combined_string → JSON → [{content:[{type:"text", text:"{lpo_json}"}]}]
+function extractLpo(combinedStr) {
+  try {
+    const outer = JSON.parse(combinedStr);
+    const text  = Array.isArray(outer) ? outer[0]?.content?.[0]?.text : null;
+    if (!text) return null;
+    return JSON.parse(text);
+  } catch { return null; }
+}
+
+// Expand a single LPO object into one row per line item
+function lpoToRows(lpo, fallbackHeader = {}) {
+  const header = {
+    LPO_Number:  lpo.lpo_number  || fallbackHeader.LPO_Number  || '',
+    Supplier:    lpo.supplier    || fallbackHeader.Supplier     || '',
+    Supermarket: lpo.supermarket || fallbackHeader.Supermarket  || '',
+    Branch:      lpo.branch      || fallbackHeader.Branch       || '',
+    Date:        lpo.date        || fallbackHeader.Date         || '',
+    Grand_Total: lpo.grand_total || '',
+  };
+
+  const items = lpo.line_items || [];
+  if (!items.length) return [header];
+
+  return items.map(it => ({
+    ...header,
+    Item_Code:        it.item_code   || it.barcode || '',
+    Item_Description: it.description || '',
+    Quantity:         it.quantity    ?? '',
+    Unit_Price:       it.unit_price  ?? '',
+    Line_Total:       it.line_total  ?? '',
+    Status: (it.quantity_confidence === 'high' || it.quantity_confidence == null)
+      ? 'OK' : 'REVIEW',
+  }));
+}
 
 export function parseRows(data) {
   let raw = [];
@@ -34,22 +71,28 @@ export function parseRows(data) {
   else if (Array.isArray(data?.items)) raw = data.items;
   if (!raw.length) return [];
 
-  const first = raw[0];
-  if (first?.combined_string) {
-    try {
-      const parsed = JSON.parse(first.combined_string);
-      if (Array.isArray(parsed) && parsed.length > 0) raw = parsed;
-    } catch { /* fall through */ }
+  // If first item has combined_string, extract LPO + line items from all items
+  if (raw[0]?.combined_string) {
+    const rows = [];
+    for (const item of raw) {
+      const lpo = extractLpo(item.combined_string);
+      if (lpo) {
+        rows.push(...lpoToRows(lpo, item));
+      } else {
+        // Fallback: clean the top-level fields
+        const clean = {};
+        Object.keys(item).forEach(k => { if (!INTERNAL_FIELDS.has(k)) clean[k] = item[k]; });
+        rows.push(clean);
+      }
+    }
+    return rows;
   }
 
+  // Plain row array — clean internal fields
   return raw.map(r => {
     const clean = {};
-    COL_ORDER.forEach(k => {
-      if (k in r && !INTERNAL_FIELDS.has(k)) clean[k] = r[k];
-    });
-    Object.keys(r).forEach(k => {
-      if (!INTERNAL_FIELDS.has(k) && !(k in clean)) clean[k] = r[k];
-    });
+    COL_ORDER.forEach(k => { if (k in r && !INTERNAL_FIELDS.has(k)) clean[k] = r[k]; });
+    Object.keys(r).forEach(k => { if (!INTERNAL_FIELDS.has(k) && !(k in clean)) clean[k] = r[k]; });
     return clean;
   });
 }
