@@ -18,12 +18,13 @@ export const isAllowed = f =>
 const INTERNAL_FIELDS = new Set([
   'combined_string','file_base64','binary','document_base64',
   'file_mime','pipeline_status','quality_score','sheets_url','sheetsUrl','google_sheets_url',
+  'Accuracy','accuracy',
 ]);
 
 export const COL_ORDER = [
   'LPO_Number','Supplier','Supermarket','Branch','Date',
   'Item_Code','Item_Description','Quantity','Unit_Price','Line_Total','Grand_Total',
-  'Math_Correct','Accuracy','Status','Status_Reasons','Source_File',
+  'Math_Correct','Status','Status_Reasons','Source_File',
 ];
 
 // Extract ALL LPO objects from combined_string.
