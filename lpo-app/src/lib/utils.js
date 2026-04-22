@@ -96,6 +96,7 @@ export function parseRows(data) {
   if (raw[0]?.combined_string) {
     const rows = [];
     for (const item of raw) {
+      console.log('[parseRows] raw combined_string:', item.combined_string);
       const lpos = extractLpos(item.combined_string);
       console.log('[parseRows] combined_string → lpos extracted:', lpos.length, lpos);
       if (lpos.length) {
