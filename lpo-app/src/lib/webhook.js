@@ -1,4 +1,4 @@
-import { detectMime, parseRows } from './utils';
+import { detectMime, parseRows, parseCsv } from './utils';
 
 const FLAG_REASONS = {
   CORRUPTED:      'File appears corrupted or unreadable',
@@ -43,6 +43,28 @@ export async function processFile(item, webhookUrl, onStageUpdate) {
     );
   }
 
+  const contentType = res.headers.get('content-type') || '';
+  const isCsv = contentType.includes('csv') || contentType.includes('octet-stream') || contentType.includes('text/plain');
+
+  if (isCsv) {
+    // n8n sent raw CSV binary — use directly for download, parse for table
+    const csvText = await res.text();
+    if (!csvText.trim()) throw new Error('Empty CSV response from n8n.');
+
+    const blob = new Blob([csvText], { type: 'text/csv' });
+    const csvBlobUrl = URL.createObjectURL(blob);
+    const rows = parseRows(parseCsv(csvText));
+
+    if (!rows.length) throw new Error('CSV had no data rows.');
+
+    const allReview = rows.every(r => String(r.Status || '').toUpperCase() === 'REVIEW');
+    return {
+      rows, flagged: allReview, flagReason: allReview ? 'All items need review' : null,
+      sheetsUrl: null, csvBlobUrl,
+    };
+  }
+
+  // JSON path
   const rawText = await res.text();
   if (!rawText.trim()) {
     throw new Error(webhookUrl.includes('webhook-test')
@@ -65,7 +87,7 @@ export async function processFile(item, webhookUrl, onStageUpdate) {
   const pipelineStatus = String(top.status || top.pipeline_status || '').toUpperCase();
 
   if (FLAG_REASONS[pipelineStatus]) {
-    return { rows: [], flagged: true, flagReason: FLAG_REASONS[pipelineStatus], sheetsUrl: null };
+    return { rows: [], flagged: true, flagReason: FLAG_REASONS[pipelineStatus], sheetsUrl: null, csvBlobUrl: null };
   }
 
   if (!Array.isArray(data) && data?.error && !data?.rows && !data?.data) {
@@ -79,26 +101,17 @@ export async function processFile(item, webhookUrl, onStageUpdate) {
 
   const sheetsUrl = top.sheets_url || top.sheetsUrl || top.google_sheets_url || null;
 
-  // Extract binary CSV from n8n if provided (base64 or raw string)
+  // Check if JSON also embeds a CSV field
   const csvRaw = top.csv_data || top.csv_content || top.csvData || top.csv || null;
   let csvBlobUrl = null;
   if (csvRaw) {
-    try {
-      // Try base64 first, fall back to plain text
-      const text = csvRaw.includes(',') && !csvRaw.match(/^[A-Za-z0-9+/=\n]+$/)
-        ? csvRaw
-        : atob(csvRaw);
-      const blob = new Blob([text], { type: 'text/csv' });
-      csvBlobUrl = URL.createObjectURL(blob);
-    } catch {
-      const blob = new Blob([csvRaw], { type: 'text/csv' });
-      csvBlobUrl = URL.createObjectURL(blob);
-    }
+    const blob = new Blob([csvRaw], { type: 'text/csv' });
+    csvBlobUrl = URL.createObjectURL(blob);
   }
 
   const allReview = rows.every(r => String(r.Status || '').toUpperCase() === 'REVIEW');
-  let flagged = false, flagReason = null;
-  if (allReview) { flagged = true; flagReason = 'All items need review'; }
-
-  return { rows, flagged, flagReason, sheetsUrl, csvBlobUrl };
+  return {
+    rows, flagged: allReview, flagReason: allReview ? 'All items need review' : null,
+    sheetsUrl, csvBlobUrl,
+  };
 }
