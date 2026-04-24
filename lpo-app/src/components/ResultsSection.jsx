@@ -1,5 +1,7 @@
-import { useState, useMemo } from 'react'; // useState used by RowModal
-import { COL_ORDER } from '../lib/utils';
+import { useState, useMemo } from 'react';
+import { COL_ORDER, toCSV } from '../lib/utils';
+
+const toCSVFromRows = rows => toCSV(rows);
 
 const STATUS_COLOR = { OK: 'var(--green)', REVIEW: 'var(--amber)', REJECTED: 'var(--red)' };
 
@@ -159,16 +161,23 @@ export default function ResultsSection({ queue, allRows, csvContent, csvBlobUrl,
   const done = queue.filter(q => q.status === 'done');
   if (!done.length) return null;
 
-  const download = () => {
-    // Single file → use binary blob from webhook; multiple files → combine all rows
-    const href = (done.length === 1 && csvBlobUrl)
-      ? csvBlobUrl
-      : URL.createObjectURL(new Blob([csvContent], { type: 'text/csv' }));
-    const a = Object.assign(document.createElement('a'), {
+  const activeItem = done.find(i => i.id === tab) ?? null;
+
+  const downloadAll = () => {
+    const href = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv' }));
+    Object.assign(document.createElement('a'), {
       href,
-      download: `LPO_${new Date().toISOString().slice(0, 10)}.csv`,
-    });
-    a.click();
+      download: `LPO_All_${new Date().toISOString().slice(0, 10)}.csv`,
+    }).click();
+  };
+
+  const downloadFile = (item) => {
+    const href = item.csvBlobUrl
+      || URL.createObjectURL(new Blob([toCSVFromRows(item.rows)], { type: 'text/csv' }));
+    Object.assign(document.createElement('a'), {
+      href,
+      download: item.file.name.replace(/\.[^.]+$/, '') + '.csv',
+    }).click();
   };
 
   const copy = () => navigator.clipboard?.writeText(csvContent);
@@ -186,8 +195,25 @@ export default function ResultsSection({ queue, allRows, csvContent, csvBlobUrl,
           {sheetsUrl && (
             <a href={sheetsUrl} target="_blank" rel="noreferrer" className="btn btn-outline btn-sm">Sheets ↗</a>
           )}
-          <button className="btn btn-outline btn-sm" onClick={copy}>Copy CSV</button>
-          <button className="btn btn-primary btn-sm" onClick={download}>↓ Download CSV</button>
+          <button className="btn btn-outline btn-sm" onClick={copy} title="Copy combined CSV to clipboard">
+            Copy All
+          </button>
+          {activeItem && (
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={() => downloadFile(activeItem)}
+              title={`Download CSV for ${activeItem.file.name}`}
+            >
+              ↓ This File
+            </button>
+          )}
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={downloadAll}
+            title={`Download all ${done.length} LPO${done.length > 1 ? 's' : ''} combined`}
+          >
+            ↓ Download All{done.length > 1 ? ` (${done.length})` : ''}
+          </button>
         </div>
       </div>
 
