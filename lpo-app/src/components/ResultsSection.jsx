@@ -160,8 +160,10 @@ export default function ResultsSection({ queue, allRows, csvContent, csvBlobUrl,
   if (!done.length) return null;
 
   const download = () => {
-    // Prefer binary from webhook; fall back to frontend-built CSV
-    const href = csvBlobUrl || URL.createObjectURL(new Blob([csvContent], { type: 'text/csv' }));
+    // Single file → use binary blob from webhook; multiple files → combine all rows
+    const href = (done.length === 1 && csvBlobUrl)
+      ? csvBlobUrl
+      : URL.createObjectURL(new Blob([csvContent], { type: 'text/csv' }));
     const a = Object.assign(document.createElement('a'), {
       href,
       download: `LPO_${new Date().toISOString().slice(0, 10)}.csv`,
