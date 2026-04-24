@@ -15,28 +15,81 @@ export const detectMime = name => {
 export const isAllowed = f =>
   /\.(pdf|png|jpg|jpeg|webp|tiff?)$/i.test(f.name);
 
+// Fields never shown in the table or CSV
 const INTERNAL_FIELDS = new Set([
   'combined_string','file_base64','binary','document_base64',
-  'file_mime','pipeline_status','quality_score','sheets_url','sheetsUrl','google_sheets_url',
+  'file_mime','pipeline_status','quality_score',
+  'sheets_url','sheetsUrl','google_sheets_url',
   'Accuracy','accuracy',
+  // Snake-case metadata that doesn't belong in output
+  'lpo_index','lpo_count','calculated_total','total_quantity',
+  'math_status','math_errors','total_diff','supplier_correct',
+  'items_total','items_review','item_confidence',
+  'quantity_sources','barcode_sources','line_number',
 ]);
 
+// Canonical display order — PascalCase
 export const COL_ORDER = [
   'LPO_Number','Supplier','Supermarket','Branch','Date',
-  'Item_Code','Item_Description','Quantity','Unit_Price','Line_Total','Grand_Total',
+  'Item_Code','Barcode','Item_Description',
+  'Quantity','Unit_Price','Line_Total','Grand_Total',
   'Math_Correct','Status','Status_Reasons','Source_File',
 ];
 
-// Extract ALL LPO objects from combined_string.
-// Structure: JSON array → each item has content[].text → JSON LPO object
+// snake_case → PascalCase field name map (matching what Google Sheets uses)
+const FIELD_MAP = {
+  lpo_number:       'LPO_Number',
+  supplier:         'Supplier',
+  supermarket:      'Supermarket',
+  branch:           'Branch',
+  date:             'Date',
+  delivery_date:    'Delivery_Date',
+  item_code:        'Item_Code',
+  barcode:          'Barcode',
+  description:      'Item_Description',
+  quantity:         'Quantity',
+  unit_price:       'Unit_Price',
+  line_total:       'Line_Total',
+  grand_total:      'Grand_Total',
+  subtotal:         'Subtotal',
+  vat_rate:         'VAT_Rate',
+  math_correct:     'Math_Correct',
+  status:           'Status',
+  status_reasons:   'Status_Reasons',
+  source_file:      'Source_File',
+  sources_used:     'Sources_Used',
+  sources_agreed:   'Sources_Agreed',
+};
+
+// Normalize a single raw row (snake or PascalCase) to PascalCase display row
+function normalizeRow(r) {
+  const out = {};
+  for (const [k, v] of Object.entries(r)) {
+    if (INTERNAL_FIELDS.has(k)) continue;
+    const mapped = FIELD_MAP[k.toLowerCase()] || FIELD_MAP[k] || k;
+    if (INTERNAL_FIELDS.has(mapped)) continue;
+    // Join array values (e.g. status_reasons: ["a","b"] → "a | b")
+    out[mapped] = Array.isArray(v) ? v.filter(Boolean).join(' | ') : v;
+  }
+  return out;
+}
+
+// Sort row keys in COL_ORDER first, then any extras
+function orderRow(r) {
+  const out = {};
+  COL_ORDER.forEach(k => { if (k in r) out[k] = r[k]; });
+  Object.keys(r).forEach(k => { if (!(k in out)) out[k] = r[k]; });
+  return out;
+}
+
+// Extract ALL LPO objects from combined_string
+// Format: JSON array → each item has content[].text → JSON LPO object
 function extractLpos(combinedStr) {
   try {
     const outer = JSON.parse(combinedStr);
     if (!Array.isArray(outer)) return [];
-
     const lpos = [];
     for (const chunk of outer) {
-      // Handle [{content:[{type:"text",text:"..."}]}] format
       const contents = chunk?.content || (chunk?.type === 'text' ? [chunk] : []);
       for (const c of contents) {
         if (c?.type !== 'text' || !c?.text) continue;
@@ -45,42 +98,34 @@ function extractLpos(combinedStr) {
           if (obj && typeof obj === 'object') lpos.push(obj);
         } catch {}
       }
-      // Handle flat [{type:"text",text:"..."}] format at top level
-      if (chunk?.type === 'text' && chunk?.text) {
-        try {
-          const obj = JSON.parse(chunk.text);
-          if (obj && typeof obj === 'object' && !lpos.includes(obj)) lpos.push(obj);
-        } catch {}
-      }
     }
     return lpos;
   } catch { return []; }
 }
 
-// Expand a single LPO object into one row per line item
-function lpoToRows(lpo, fallbackHeader = {}) {
-  const header = {
-    LPO_Number:  lpo.lpo_number  || lpo.LPO_Number  || fallbackHeader.LPO_Number  || '',
-    Supplier:    lpo.supplier    || lpo.Supplier     || fallbackHeader.Supplier     || '',
-    Supermarket: lpo.supermarket || lpo.Supermarket  || fallbackHeader.Supermarket  || '',
-    Branch:      lpo.branch      || lpo.Branch       || fallbackHeader.Branch       || '',
-    Date:        lpo.date        || lpo.Date         || fallbackHeader.Date         || '',
-    Grand_Total: lpo.grand_total || lpo.Grand_Total  || '',
-  };
+// Expand a single LPO object (with line_items) into one row per item
+function lpoToRows(lpo, fallback = {}) {
+  const header = normalizeRow({
+    lpo_number:  lpo.lpo_number  || fallback.LPO_Number  || '',
+    supplier:    lpo.supplier    || fallback.Supplier     || '',
+    supermarket: lpo.supermarket || fallback.Supermarket  || '',
+    branch:      lpo.branch      || fallback.Branch       || '',
+    date:        lpo.date        || fallback.Date         || '',
+    grand_total: lpo.grand_total || '',
+  });
 
-  // Support multiple field names for line items
   const items = lpo.line_items || lpo.items || lpo.products || lpo.rows || [];
-  if (!items.length) return [header];
+  if (!items.length) return [orderRow(header)];
 
-  return items.map(it => ({
+  return items.map(it => orderRow({
     ...header,
-    Item_Code:        it.item_code        || it.barcode      || it.Item_Code   || '',
-    Item_Description: it.description      || it.Item_Description || it.name   || '',
-    Quantity:         it.quantity         ?? it.Quantity      ?? '',
-    Unit_Price:       it.unit_price       ?? it.Unit_Price    ?? '',
-    Line_Total:       it.line_total       ?? it.Line_Total    ?? '',
-    Status: (it.quantity_confidence === 'high' || it.quantity_confidence == null)
-      ? 'OK' : 'REVIEW',
+    Item_Code:        it.item_code   || it.Item_Code   || '',
+    Barcode:          it.barcode     || '',
+    Item_Description: it.description || it.Item_Description || '',
+    Quantity:         it.quantity    ?? '',
+    Unit_Price:       it.unit_price  ?? '',
+    Line_Total:       it.line_total  ?? '',
+    Status: (it.quantity_confidence === 'high' || it.quantity_confidence == null) ? 'OK' : 'REVIEW',
   }));
 }
 
@@ -92,7 +137,7 @@ export function parseRows(data) {
   else if (Array.isArray(data?.items)) raw = data.items;
   if (!raw.length) return [];
 
-  // If first item has combined_string, parse it
+  // Has combined_string — need to extract from it
   if (raw[0]?.combined_string) {
     const rows = [];
     for (const item of raw) {
@@ -100,51 +145,42 @@ export function parseRows(data) {
       try { outer = JSON.parse(item.combined_string); } catch { outer = null; }
 
       if (!Array.isArray(outer) || !outer.length) {
-        // Fallback to top-level fields
-        const clean = {};
-        Object.keys(item).forEach(k => { if (!INTERNAL_FIELDS.has(k)) clean[k] = item[k]; });
-        rows.push(clean);
+        rows.push(orderRow(normalizeRow(item)));
         continue;
       }
 
       if (outer[0]?.content) {
-        // Claude structured format: [{content:[{type:"text",text:"{lpo_json}"}]}]
+        // Claude structured: [{content:[{type:"text",text:"{lpo_json}"}]}]
         const lpos = extractLpos(item.combined_string);
         if (lpos.length) {
           for (const lpo of lpos) rows.push(...lpoToRows(lpo, item));
         } else {
-          const clean = {};
-          Object.keys(item).forEach(k => { if (!INTERNAL_FIELDS.has(k)) clean[k] = item[k]; });
-          rows.push(clean);
+          rows.push(orderRow(normalizeRow(item)));
         }
       } else {
-        // Flat rows format: combined_string is already [{LPO_Number, Item_Description, ...}]
-        for (const row of outer) {
-          const clean = {};
-          Object.keys(row).forEach(k => { if (!INTERNAL_FIELDS.has(k)) clean[k] = row[k]; });
-          rows.push(clean);
-        }
+        // Flat rows inside combined_string: [{lpo_number|LPO_Number, ...}]
+        for (const row of outer) rows.push(orderRow(normalizeRow(row)));
       }
     }
     return rows;
   }
 
-  // Plain row array — clean internal fields
-  return raw.map(r => {
-    const clean = {};
-    COL_ORDER.forEach(k => { if (k in r && !INTERNAL_FIELDS.has(k)) clean[k] = r[k]; });
-    Object.keys(r).forEach(k => { if (!INTERNAL_FIELDS.has(k) && !(k in clean)) clean[k] = r[k]; });
-    return clean;
-  });
+  // Plain flat array — normalize each row directly
+  return raw.map(r => orderRow(normalizeRow(r)));
 }
 
 export function toCSV(rows) {
   if (!rows.length) return '';
-  const keys = Object.keys(rows[0]);
+  // Collect all keys across all rows (some rows may have extra fields)
+  const keySet = new Set();
+  rows.forEach(r => Object.keys(r).forEach(k => keySet.add(k)));
+  // Order: COL_ORDER first, then extras
+  const keys = [...COL_ORDER.filter(k => keySet.has(k)),
+                 ...[...keySet].filter(k => !COL_ORDER.includes(k))];
   const esc = v => {
     const s = v == null ? '' : String(v);
     return s.includes(',') || s.includes('"') || s.includes('\n')
       ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
-  return [keys.join(','), ...rows.map(r => keys.map(k => esc(r[k])).join(','))].join('\n');
+  return [keys.join(','), ...rows.map(r => keys.map(k => esc(r[k] ?? '')).join(','))].join('\n');
 }
