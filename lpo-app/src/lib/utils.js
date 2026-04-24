@@ -21,19 +21,23 @@ const INTERNAL_FIELDS = new Set([
   'file_mime','pipeline_status','quality_score',
   'sheets_url','sheetsUrl','google_sheets_url',
   'Accuracy','accuracy',
-  // Snake-case metadata that doesn't belong in output
+  // Hidden display columns
+  'Status_Reasons','status_reasons',
+  'Math_Correct','math_correct',
+  'Line_Total','line_total',
+  'Unit_Price','unit_price',
+  // Snake-case metadata
   'lpo_index','lpo_count','calculated_total','total_quantity',
   'math_status','math_errors','total_diff','supplier_correct',
   'items_total','items_review','item_confidence',
   'quantity_sources','barcode_sources','line_number',
 ]);
 
-// Canonical display order — PascalCase
+// Canonical display order — PascalCase (hidden columns excluded)
 export const COL_ORDER = [
   'LPO_Number','Supplier','Supermarket','Branch','Date',
   'Item_Code','Barcode','Item_Description',
-  'Quantity','Unit_Price','Line_Total','Grand_Total',
-  'Math_Correct','Status','Status_Reasons','Source_File',
+  'Quantity','Grand_Total','Status','Source_File',
 ];
 
 // snake_case → PascalCase field name map (matching what Google Sheets uses)

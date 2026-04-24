@@ -79,15 +79,26 @@ export async function processFile(item, webhookUrl, onStageUpdate) {
 
   const sheetsUrl = top.sheets_url || top.sheetsUrl || top.google_sheets_url || null;
 
-  const allReview = rows.every(r => String(r.Status || '').toUpperCase() === 'REVIEW');
-  const avgAcc = rows.reduce((s, r) =>
-    s + (parseFloat(String(r.Accuracy || '100').replace('%', '')) || 100), 0) / rows.length;
-
-  let flagged = false, flagReason = null;
-  if (allReview || avgAcc < 75) {
-    flagged = true;
-    flagReason = allReview ? 'All items need review' : `Low avg accuracy (${Math.round(avgAcc)}%)`;
+  // Extract binary CSV from n8n if provided (base64 or raw string)
+  const csvRaw = top.csv_data || top.csv_content || top.csvData || top.csv || null;
+  let csvBlobUrl = null;
+  if (csvRaw) {
+    try {
+      // Try base64 first, fall back to plain text
+      const text = csvRaw.includes(',') && !csvRaw.match(/^[A-Za-z0-9+/=\n]+$/)
+        ? csvRaw
+        : atob(csvRaw);
+      const blob = new Blob([text], { type: 'text/csv' });
+      csvBlobUrl = URL.createObjectURL(blob);
+    } catch {
+      const blob = new Blob([csvRaw], { type: 'text/csv' });
+      csvBlobUrl = URL.createObjectURL(blob);
+    }
   }
 
-  return { rows, flagged, flagReason, sheetsUrl };
+  const allReview = rows.every(r => String(r.Status || '').toUpperCase() === 'REVIEW');
+  let flagged = false, flagReason = null;
+  if (allReview) { flagged = true; flagReason = 'All items need review'; }
+
+  return { rows, flagged, flagReason, sheetsUrl, csvBlobUrl };
 }

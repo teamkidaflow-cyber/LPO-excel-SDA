@@ -83,6 +83,7 @@ export default function App() {
         status: 'done', stages: Array(STAGE_COUNT).fill('done'), msg: '',
         rows: result.rows, flagged: result.flagged,
         flagReason: result.flagReason, sheetsUrl: result.sheetsUrl,
+        csvBlobUrl: result.csvBlobUrl || null,
       };
       refreshResultsAfter(item.id, patch);
     } catch (err) {
@@ -126,7 +127,8 @@ export default function App() {
     }, 50);
   };
 
-  const sheetsUrl    = queue.find(q => q.sheetsUrl)?.sheetsUrl || null;
+  const sheetsUrl    = queue.find(q => q.sheetsUrl)?.sheetsUrl   || null;
+  const csvBlobUrl   = queue.find(q => q.csvBlobUrl)?.csvBlobUrl || null;
   const showPipeline = queue.some(q => q.status !== 'pending');
   const donItems     = queue.filter(q => q.status === 'done');
   const showResults  = donItems.length > 0;
@@ -161,6 +163,7 @@ export default function App() {
               queue={queue}
               allRows={allRows}
               csvContent={csvContent}
+              csvBlobUrl={csvBlobUrl}
               sheetsUrl={sheetsUrl}
               activeTab={activeTab}
               onTabChange={setActiveTab}

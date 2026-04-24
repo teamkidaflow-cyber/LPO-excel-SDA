@@ -94,16 +94,33 @@ function DataTable({ rows, showFilename }) {
 }
 
 function PreviewPane({ file }) {
-  const url  = useMemo(() => file ? URL.createObjectURL(file) : null, [file]);
-  const isPdf = file?.name?.toLowerCase().endsWith('.pdf') || file?.type === 'application/pdf';
+  const url    = useMemo(() => file ? URL.createObjectURL(file) : null, [file]);
+  const [rotate, setRotate] = useState(0);
+  const isPdf  = file?.name?.toLowerCase().endsWith('.pdf') || file?.type === 'application/pdf';
 
   if (!url) return null;
   return (
     <div className="preview-pane">
-      <div className="pane-header">Original Document</div>
+      <div className="pane-header">
+        Original Document
+        {!isPdf && (
+          <button
+            onClick={() => setRotate(r => (r + 90) % 360)}
+            className="rotate-btn"
+            title="Rotate image"
+          >↻</button>
+        )}
+      </div>
       {isPdf
         ? <iframe src={url} title={file.name} className="preview-frame" />
-        : <img src={url} alt={file.name} className="preview-img" />
+        : <div className="preview-img-wrap">
+            <img
+              src={url}
+              alt={file.name}
+              style={{ transform: `rotate(${rotate}deg)`, transition: 'transform .25s' }}
+              className="preview-img"
+            />
+          </div>
       }
     </div>
   );
@@ -136,16 +153,17 @@ function FilePane({ item }) {
   );
 }
 
-export default function ResultsSection({ queue, allRows, csvContent, sheetsUrl, activeTab, onTabChange }) {
+export default function ResultsSection({ queue, allRows, csvContent, csvBlobUrl, sheetsUrl, activeTab, onTabChange }) {
   const tab = activeTab ?? 'all';
   const setTab = onTabChange ?? (() => {});
   const done = queue.filter(q => q.status === 'done');
   if (!done.length) return null;
 
   const download = () => {
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+    // Prefer binary from webhook; fall back to frontend-built CSV
+    const href = csvBlobUrl || URL.createObjectURL(new Blob([csvContent], { type: 'text/csv' }));
     const a = Object.assign(document.createElement('a'), {
-      href: URL.createObjectURL(blob),
+      href,
       download: `LPO_${new Date().toISOString().slice(0, 10)}.csv`,
     });
     a.click();
